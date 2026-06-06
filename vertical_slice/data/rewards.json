@@ -1,0 +1,144 @@
+[
+  {
+    "id": "damage_calibration",
+    "name": "攻击校准",
+    "type": "stat",
+    "stat": "damage_mult",
+    "value": 0.12,
+    "description": "所有伤害 +12%。"
+  },
+  {
+    "id": "light_trigger",
+    "name": "轻量扳机",
+    "type": "stat",
+    "stat": "attack_speed_mult",
+    "value": 0.10,
+    "description": "武器攻击速度 +10%。"
+  },
+  {
+    "id": "small_shield",
+    "name": "小型晶盾",
+    "type": "stat",
+    "stat": "max_hp",
+    "value": 12.0,
+    "description": "最大生命 +12，并恢复等量生命。"
+  },
+  {
+    "id": "status_resonance",
+    "name": "状态共鸣",
+    "type": "stat",
+    "stat": "status_mult",
+    "value": 0.12,
+    "description": "状态持续时间 +12%。"
+  },
+  {
+    "id": "field_repair",
+    "name": "战地修复",
+    "type": "heal",
+    "value": 35.0,
+    "description": "恢复 35 生命。"
+  },
+  {
+    "id": "unlock_coin",
+    "name": "磁暴硬币",
+    "type": "weapon_unlock",
+    "weapon_id": "magnetic_coin",
+    "description": "解锁感电弹射武器。"
+  },
+  {
+    "id": "unlock_frost",
+    "name": "冻流水晶",
+    "type": "weapon_unlock",
+    "weapon_id": "frost_crystal",
+    "description": "解锁区域冻结武器。"
+  },
+  {
+    "id": "unlock_brick",
+    "name": "裂纹板砖",
+    "type": "weapon_unlock",
+    "weapon_id": "cracked_brick",
+    "description": "解锁近战重击武器。"
+  },
+  {
+    "id": "pistol_level",
+    "name": "手枪校准",
+    "type": "weapon_level",
+    "weapon_id": "shell_pistol",
+    "description": "弹壳手枪升 1 级，最多 3 级。"
+  },
+  {
+    "id": "coin_level",
+    "name": "导能抛光",
+    "type": "weapon_level",
+    "weapon_id": "magnetic_coin",
+    "description": "磁暴硬币升 1 级，最多 3 级。"
+  },
+  {
+    "id": "frost_level",
+    "name": "凝流增幅",
+    "type": "weapon_level",
+    "weapon_id": "frost_crystal",
+    "description": "冻流水晶升 1 级，最多 3 级。"
+  },
+  {
+    "id": "brick_level",
+    "name": "裂纹加深",
+    "type": "weapon_level",
+    "weapon_id": "cracked_brick",
+    "description": "裂纹板砖升 1 级，最多 3 级。"
+  },
+  {
+    "id": "risky_overdrive",
+    "name": "危险超频",
+    "type": "stat",
+    "stat": "attack_speed_mult",
+    "value": 0.22,
+    "description": "武器攻击速度 +22%。",
+    "debuff_id": "shifted_balance"
+  },
+  {
+    "id": "glass_resonance",
+    "name": "脆响共振",
+    "type": "stat",
+    "stat": "damage_mult",
+    "value": 0.25,
+    "description": "所有伤害 +25%。",
+    "debuff_id": "hollow_defense"
+  },
+  {
+    "id": "rapid_circuit",
+    "name": "急速回路",
+    "type": "stat",
+    "stat": "status_mult",
+    "value": 0.25,
+    "description": "状态持续时间 +25%。",
+    "debuff_id": "rushed_pulse"
+  },
+  {
+    "id": "dense_rift",
+    "name": "密集裂隙",
+    "type": "stat",
+    "stat": "damage_mult",
+    "value": 0.30,
+    "description": "所有伤害 +30%。",
+    "debuff_id": "rift_echo"
+  },
+  {
+    "id": "cold_bargain",
+    "name": "寒冷交易",
+    "type": "stat",
+    "stat": "attack_speed_mult",
+    "value": 0.18,
+    "description": "武器攻击速度 +18%。",
+    "debuff_id": "freeze_dullness"
+  },
+  {
+    "id": "leaking_focus",
+    "name": "漏损聚焦",
+    "type": "stat",
+    "stat": "status_mult",
+    "value": 0.28,
+    "description": "状态持续时间 +28%。",
+    "debuff_id": "experience_leak"
+  }
+]

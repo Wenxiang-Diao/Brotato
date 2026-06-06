@@ -1,0 +1,44 @@
+[
+  {
+    "id": "shifted_balance",
+    "name": "重心偏移",
+    "severity": "light",
+    "description": "移动速度 -8%。",
+    "modifiers": {"speed": 0.92}
+  },
+  {
+    "id": "hollow_defense",
+    "name": "防线空洞",
+    "severity": "medium",
+    "description": "受到接触与弹体伤害 +12%。",
+    "modifiers": {"contact_damage_mult": 1.12}
+  },
+  {
+    "id": "rushed_pulse",
+    "name": "急促脉冲",
+    "severity": "medium",
+    "description": "主动技能冷却 -15%，最大生命 -10%。",
+    "modifiers": {"skill_cooldown_max": 0.85, "max_hp": 0.90}
+  },
+  {
+    "id": "experience_leak",
+    "name": "星屑漏损",
+    "severity": "light",
+    "description": "经验获得 -12%。",
+    "modifiers": {"xp_mult": 0.88}
+  },
+  {
+    "id": "freeze_dullness",
+    "name": "冻结迟钝",
+    "severity": "light",
+    "description": "冻结持续时间 -18%。",
+    "modifiers": {"freeze_duration_mult": 0.82}
+  },
+  {
+    "id": "rift_echo",
+    "name": "裂隙回声",
+    "severity": "medium",
+    "description": "敌人生成速度 +18%。",
+    "modifiers": {"spawn_mult": 1.18}
+  }
+]

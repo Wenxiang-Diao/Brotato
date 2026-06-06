@@ -1,0 +1,34 @@
+[
+  {
+    "id": "mark",
+    "name": "标记",
+    "category": "amplifier",
+    "max_stacks": 1,
+    "base_duration": 4.0,
+    "description": "作为雷链的目标前置，并提高集火可读性。"
+  },
+  {
+    "id": "shock",
+    "name": "感电",
+    "category": "trigger",
+    "max_stacks": 1,
+    "base_duration": 3.0,
+    "description": "命中标记目标时触发雷链。"
+  },
+  {
+    "id": "freeze",
+    "name": "冻结",
+    "category": "control",
+    "max_stacks": 1,
+    "base_duration": 1.4,
+    "description": "降低移动速度，并可被重击或灼烧消耗。"
+  },
+  {
+    "id": "burn",
+    "name": "灼烧",
+    "category": "damage_over_time",
+    "max_stacks": 3,
+    "base_duration": 3.0,
+    "description": "每秒造成伤害；命中冻结目标时触发热冲击。"
+  }
+]

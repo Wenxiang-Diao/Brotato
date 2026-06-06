@@ -1,0 +1,38 @@
+[
+  {
+    "id": "lightning_chain",
+    "name": "雷链",
+    "requirements": ["shock", "mark"],
+    "consumes": [],
+    "cooldown": 0.0,
+    "damage_multiplier": 1.25,
+    "secondary_multiplier": 0.55,
+    "radius": 180.0,
+    "max_targets": 2,
+    "effect": "向 180 范围内最多 2 个敌人传导 55% 伤害。"
+  },
+  {
+    "id": "shatter",
+    "name": "破碎",
+    "requirements": ["freeze", "heavy_hit"],
+    "consumes": ["freeze"],
+    "cooldown": 0.0,
+    "damage_multiplier": 1.8,
+    "secondary_multiplier": 0.65,
+    "radius": 82.0,
+    "max_targets": 0,
+    "effect": "本次伤害乘以 1.8，并对 82 范围造成 65% 范围伤害。"
+  },
+  {
+    "id": "thermal_shock",
+    "name": "热冲击",
+    "requirements": ["freeze", "burn"],
+    "consumes": ["freeze"],
+    "cooldown": 0.0,
+    "damage_multiplier": 1.55,
+    "secondary_multiplier": 0.0,
+    "radius": 0.0,
+    "max_targets": 0,
+    "effect": "本次灼烧命中伤害乘以 1.55。"
+  }
+]

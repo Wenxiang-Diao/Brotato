@@ -1,0 +1,87 @@
+[
+  {
+    "id": "stardust_slime",
+    "name": "星屑史莱姆",
+    "type": "normal",
+    "hp": 20.0,
+    "speed": 70.0,
+    "damage": 8.0,
+    "xp": 3.0,
+    "radius": 14.0,
+    "armor": 0.0,
+    "color": "#79c7c5"
+  },
+  {
+    "id": "crystal_beetle",
+    "name": "晶壳甲虫",
+    "type": "normal",
+    "hp": 54.0,
+    "speed": 54.0,
+    "damage": 12.0,
+    "xp": 6.0,
+    "radius": 17.0,
+    "armor": 25.0,
+    "color": "#d9b44a"
+  },
+  {
+    "id": "needle_rat",
+    "name": "针叶鼠",
+    "type": "normal",
+    "hp": 17.0,
+    "speed": 132.0,
+    "damage": 9.0,
+    "xp": 4.0,
+    "radius": 11.0,
+    "armor": 0.0,
+    "color": "#88b04b"
+  },
+  {
+    "id": "ember_spirit",
+    "name": "火绒灯灵",
+    "type": "normal",
+    "hp": 32.0,
+    "speed": 64.0,
+    "damage": 11.0,
+    "xp": 6.0,
+    "radius": 13.0,
+    "armor": 0.0,
+    "color": "#ff7043"
+  },
+  {
+    "id": "banner_puppet",
+    "name": "标旗傀儡",
+    "type": "normal",
+    "hp": 44.0,
+    "speed": 48.0,
+    "damage": 7.0,
+    "xp": 7.0,
+    "radius": 15.0,
+    "armor": 8.0,
+    "color": "#bf8bff"
+  },
+  {
+    "id": "molten_brute",
+    "name": "熔芯暴徒",
+    "type": "elite",
+    "hp": 620.0,
+    "speed": 58.0,
+    "damage": 20.0,
+    "xp": 65.0,
+    "radius": 29.0,
+    "armor": 12.0,
+    "color": "#ef5b2a"
+  },
+  {
+    "id": "star_bone_colossus",
+    "name": "星骸巨像",
+    "type": "boss",
+    "hp": 2100.0,
+    "speed": 42.0,
+    "damage": 25.0,
+    "xp": 0.0,
+    "radius": 48.0,
+    "armor": 18.0,
+    "shield": 650.0,
+    "color": "#c9b6e4"
+  }
+]

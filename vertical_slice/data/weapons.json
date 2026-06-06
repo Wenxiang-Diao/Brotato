@@ -1,0 +1,49 @@
+[
+  {
+    "id": "shell_pistol",
+    "name": "弹壳手枪",
+    "kind": "projectile",
+    "damage": 13.0,
+    "cooldown": 0.62,
+    "projectile_speed": 620.0,
+    "status": "mark",
+    "status_duration": 4.0,
+    "color": "#ffd166"
+  },
+  {
+    "id": "magnetic_coin",
+    "name": "磁暴硬币",
+    "kind": "projectile",
+    "damage": 8.0,
+    "cooldown": 0.92,
+    "projectile_speed": 520.0,
+    "status": "shock",
+    "status_duration": 3.0,
+    "bounces": 1,
+    "color": "#7aa2ff"
+  },
+  {
+    "id": "frost_crystal",
+    "name": "冻流水晶",
+    "kind": "zone",
+    "damage": 3.0,
+    "cooldown": 4.8,
+    "radius": 78.0,
+    "duration": 3.2,
+    "status": "freeze",
+    "status_duration": 1.4,
+    "color": "#8ad8ff"
+  },
+  {
+    "id": "cracked_brick",
+    "name": "裂纹板砖",
+    "kind": "melee",
+    "damage": 31.0,
+    "cooldown": 1.75,
+    "radius": 76.0,
+    "status": "",
+    "status_duration": 0.0,
+    "heavy": true,
+    "color": "#e0a96d"
+  }
+]

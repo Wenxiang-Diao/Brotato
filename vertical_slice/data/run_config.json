@@ -1,0 +1,16 @@
+{
+  "seed": 20260606,
+  "target_run_minutes_min": 8,
+  "target_run_minutes_max": 12,
+  "layer_count": 6,
+  "layer_duration_seconds": 90,
+  "expected_boss_seconds": 60,
+  "layers": [
+    {"layer": 1, "kind": "normal", "enemy_pool": ["stardust_slime"]},
+    {"layer": 2, "kind": "normal", "enemy_pool": ["stardust_slime", "crystal_beetle", "needle_rat"]},
+    {"layer": 3, "kind": "normal", "enemy_pool": ["stardust_slime", "crystal_beetle", "needle_rat", "ember_spirit"]},
+    {"layer": 4, "kind": "normal", "enemy_pool": ["stardust_slime", "crystal_beetle", "needle_rat", "ember_spirit", "banner_puppet"]},
+    {"layer": 5, "kind": "elite", "enemy_pool": ["stardust_slime", "ember_spirit"], "boss": "molten_brute"},
+    {"layer": 6, "kind": "boss", "boss": "star_bone_colossus"}
+  ]
+}
