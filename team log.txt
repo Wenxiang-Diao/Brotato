@@ -3,3 +3,6 @@ dwx: update characters, docs, monsters, weapons
 
 6.5: 
 dwx: update nodes, rewards
+
+6.6：
+dwx: update debuffs, crystals
