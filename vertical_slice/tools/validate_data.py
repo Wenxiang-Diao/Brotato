@@ -78,6 +78,16 @@ def index_rows(name: str, rows: Any) -> dict[str, dict[str, Any]]:
 
 def validate() -> list[str]:
     messages: list[str] = []
+    manifest = load_json("manifest")
+    require(isinstance(manifest, dict), "manifest.json must contain an object")
+    require(manifest.get("schema_version") == 1, "manifest: unsupported schema_version")
+    required_files = manifest.get("required_files")
+    require(isinstance(required_files, list), "manifest: required_files must be a list")
+    expected_files = {f"{name}.json" for name in (*EXPECTED_COUNTS, "run_config")}
+    require(set(required_files) == expected_files, "manifest: required_files mismatch")
+    for filename in required_files:
+        require((DATA_DIR / filename).exists(), f"manifest: missing {filename}")
+
     weapons = index_rows("weapons", load_json("weapons"))
     enemies = index_rows("enemies", load_json("enemies"))
     statuses = index_rows("statuses", load_json("statuses"))
@@ -222,6 +232,9 @@ def validate() -> list[str]:
         + ", ".join(f"{name}={count}" for name, count in EXPECTED_COUNTS.items())
     )
     messages.append(f"validated layers=6, fixed_seed={seed}")
+    messages.append(
+        f"validated data schema={manifest['schema_version']}, content={manifest.get('content_version', '')}"
+    )
     messages.append("all cross-file references are valid")
     return messages
 

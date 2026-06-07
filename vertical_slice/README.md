@@ -11,6 +11,14 @@
 - `tools/`：数据校验工具。
 - `tests/`：自动化检查。
 
+## 工程结构
+
+- `game/scripts/main.gd`：输入、状态机、帧循环和灰盒绘制。
+- `game/scripts/core/`：数据、指标、奖励、战斗规则、实体工厂、成长、目标查询与战斗事件。
+- `data/manifest.json`：数据 schema 与必需配置清单。
+
+P2 架构说明见 `design/10_p2_architecture_plan.md`，完成结论见 `design/11_p2_completion_report.md`。
+
 ## 启动目标
 
 ```text
@@ -43,6 +51,9 @@
 - 奖励界面 `R`：消耗一次重抽。
 - 结算界面 `R`：以相同模式重开。
 - 暂停或结算界面 `M`：返回模式选择。
+- `F9`：显示或隐藏性能调试面板。
+- `F8`：切换低动态反馈，关闭屏幕震动与命中停顿。
+- `F10`：调试跳层；该局不会进入正式 A/B 汇总。
 
 P1 新增新手引导、Boss 倒计时预警、状态反应图例、奖励重抽、武器等级显示和结算统计。完整验收项见 `design/08_p1_completion_checklist.md`。
 

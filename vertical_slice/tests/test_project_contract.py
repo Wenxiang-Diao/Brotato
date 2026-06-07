@@ -16,8 +16,9 @@ class ProjectContractTest(unittest.TestCase):
         self.assertTrue((SLICE_ROOT / "game" / "scripts" / "main.gd").exists())
 
     def test_two_validation_modes_and_metrics_exist(self):
-        script = (SLICE_ROOT / "game" / "scripts" / "main.gd").read_text(
-            encoding="utf-8"
+        scripts = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in (SLICE_ROOT / "game" / "scripts").rglob("*.gd")
         )
         for token in (
             "_start_run(false)",
@@ -29,21 +30,45 @@ class ProjectContractTest(unittest.TestCase):
             "reward_rng",
             "loot_rng",
         ):
-            self.assertIn(token, script)
-        self.assertNotIn("get_instance_id()", script)
+            self.assertIn(token, scripts)
+        self.assertNotIn("get_instance_id()", scripts)
 
     def test_runtime_regressions_are_guarded(self):
-        script = (SLICE_ROOT / "game" / "scripts" / "main.gd").read_text(
+        scripts = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in (SLICE_ROOT / "game" / "scripts").rglob("*.gd")
+        )
+        self.assertIn("pending_reward_levels", scripts)
+        self.assertIn("active_debuffs.has(debuff_id)", scripts)
+        self.assertIn("already_scaled := false", scripts)
+        self.assertIn("MAX_ENEMIES := 150", scripts)
+        self.assertIn("MAX_PROJECTILES := 100", scripts)
+        self.assertIn("MAX_ACTIVE_DEBUFFS := 5", scripts)
+        self.assertIn("risk_rewards_offered", scripts)
+        self.assertIn("risk_rewards_chosen", scripts)
+
+    def test_p2_core_modules_exist(self):
+        core = SLICE_ROOT / "game" / "scripts" / "core"
+        expected = {
+            "slice_data_repository.gd",
+            "run_metrics_recorder.gd",
+            "reward_service.gd",
+            "combat_rules.gd",
+            "entity_factory.gd",
+            "progression_service.gd",
+            "targeting_service.gd",
+            "combat_event_hub.gd",
+            "combat_feedback.gd",
+        }
+        self.assertEqual(expected, {path.name for path in core.glob("*.gd")})
+        main_script = (SLICE_ROOT / "game" / "scripts" / "main.gd").read_text(
             encoding="utf-8"
         )
-        self.assertIn("pending_reward_levels", script)
-        self.assertIn("active_debuffs.has(debuff_id)", script)
-        self.assertIn("already_scaled := false", script)
-        self.assertIn("MAX_ENEMIES := 150", script)
-        self.assertIn("MAX_PROJECTILES := 100", script)
-        self.assertIn("MAX_ACTIVE_DEBUFFS := 5", script)
-        self.assertIn("risk_rewards_offered", script)
-        self.assertIn("risk_rewards_chosen", script)
+        for module in expected:
+            self.assertIn(f"core/{module}", main_script)
+        self.assertNotIn("FileAccess.open", main_script)
+        self.assertNotIn("JSON.parse", main_script)
+        self.assertNotIn("func _load_json(", main_script)
 
     def test_slice_counts_match_scope(self):
         expected = {

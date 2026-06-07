@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "content_version": "p3",
+  "required_files": [
+    "weapons.json",
+    "enemies.json",
+    "statuses.json",
+    "reactions.json",
+    "debuffs.json",
+    "rewards.json",
+    "run_config.json"
+  ]
+}

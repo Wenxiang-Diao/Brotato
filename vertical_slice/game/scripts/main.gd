@@ -1,5 +1,14 @@
 extends Node2D
 
+const SliceDataRepositoryScript := preload("res://game/scripts/core/slice_data_repository.gd")
+const RunMetricsRecorderScript := preload("res://game/scripts/core/run_metrics_recorder.gd")
+const RewardServiceScript := preload("res://game/scripts/core/reward_service.gd")
+const CombatRulesScript := preload("res://game/scripts/core/combat_rules.gd")
+const EntityFactoryScript := preload("res://game/scripts/core/entity_factory.gd")
+const ProgressionServiceScript := preload("res://game/scripts/core/progression_service.gd")
+const TargetingServiceScript := preload("res://game/scripts/core/targeting_service.gd")
+const CombatEventHubScript := preload("res://game/scripts/core/combat_event_hub.gd")
+const CombatFeedbackScript := preload("res://game/scripts/core/combat_feedback.gd")
 const VIEW_SIZE := Vector2(1280.0, 720.0)
 const ARENA_MARGIN := 34.0
 const RUN_SEED := 20260606
@@ -39,6 +48,15 @@ var debuffs_data: Dictionary = {}
 var statuses_data: Dictionary = {}
 var reactions_data: Dictionary = {}
 var run_config: Dictionary = {}
+var data_repository: SliceDataRepository = SliceDataRepositoryScript.new()
+var metrics_recorder: RunMetricsRecorder = RunMetricsRecorderScript.new()
+var reward_service: RewardService = RewardServiceScript.new()
+var combat_rules: CombatRules = CombatRulesScript.new()
+var entity_factory: EntityFactory = EntityFactoryScript.new()
+var progression_service: ProgressionService = ProgressionServiceScript.new()
+var targeting_service: TargetingService = TargetingServiceScript.new()
+var combat_events: CombatEventHub = CombatEventHubScript.new()
+var combat_feedback: CombatFeedback = CombatFeedbackScript.new()
 
 var player: Dictionary = {}
 var layer := 1
@@ -62,6 +80,8 @@ var tutorial_seen := false
 var paused := false
 var rerolls_remaining := 2
 var metrics_saved := false
+var debug_overlay_visible := false
+var resume_protection := 0.0
 
 var title_font: Font
 var body_font: Font
@@ -71,46 +91,24 @@ func _ready() -> void:
 	rng.seed = RUN_SEED
 	title_font = ThemeDB.fallback_font
 	body_font = ThemeDB.fallback_font
-	_load_data()
+	if not _load_data():
+		set_process(false)
 	queue_redraw()
 
 
-func _load_data() -> void:
-	weapons = _load_json_array("res://data/weapons.json")
-	rewards = _load_json_array("res://data/rewards.json")
-	for row in _load_json_array("res://data/enemies.json"):
-		enemies_data[row.id] = row
-	for row in _load_json_array("res://data/debuffs.json"):
-		debuffs_data[row.id] = row
-	for row in _load_json_array("res://data/statuses.json"):
-		statuses_data[row.id] = row
-	for row in _load_json_array("res://data/reactions.json"):
-		reactions_data[row.id] = row
-	var config = _load_json("res://data/run_config.json")
-	if config is Dictionary:
-		run_config = config
-
-
-func _load_json_array(path: String) -> Array[Dictionary]:
-	var value = _load_json(path)
-	var output: Array[Dictionary] = []
-	if value is Array:
-		for row in value:
-			if row is Dictionary:
-				output.append(row)
-	return output
-
-
-func _load_json(path: String) -> Variant:
-	if not FileAccess.file_exists(path):
-		push_error("Missing data file: " + path)
-		return []
-	var file: FileAccess = FileAccess.open(path, FileAccess.READ)
-	var parsed = JSON.parse_string(file.get_as_text())
-	if parsed == null:
-		push_error("Invalid JSON: " + path)
-		return []
-	return parsed
+func _load_data() -> bool:
+	if not data_repository.load_all():
+		for error in data_repository.errors:
+			push_error(error)
+		return false
+	weapons = data_repository.weapons
+	rewards = data_repository.rewards
+	enemies_data = data_repository.enemies
+	debuffs_data = data_repository.debuffs
+	statuses_data = data_repository.statuses
+	reactions_data = data_repository.reactions
+	run_config = data_repository.run_config
+	return true
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -129,7 +127,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 		if paused:
 			if event.keycode == KEY_ESCAPE or event.keycode == KEY_P:
-				paused = false
+				_resume_from_pause()
 			elif event.keycode == KEY_M:
 				paused = false
 				state = GameState.MENU
@@ -160,7 +158,13 @@ func _unhandled_input(event: InputEvent) -> void:
 				state = GameState.MENU
 				queue_redraw()
 		GameState.PLAYING:
-			if event.keycode == KEY_F10:
+			if event.keycode == KEY_F8:
+				combat_feedback.set_reduced_motion(not combat_feedback.reduced_motion)
+				_show_message("低动态反馈：开" if combat_feedback.reduced_motion else "低动态反馈：关", 1.2)
+			elif event.keycode == KEY_F9:
+				debug_overlay_visible = not debug_overlay_visible
+				queue_redraw()
+			elif event.keycode == KEY_F10:
 				metrics.debug_used = true
 				_advance_layer()
 
@@ -191,36 +195,10 @@ func _start_run(use_risk_mode: bool) -> void:
 	paused = false
 	rerolls_remaining = 2
 	metrics_saved = false
-	metrics = {
-		"seed": RUN_SEED,
-		"mode": "risk" if risk_mode else "standard",
-		"kills": 0,
-		"damage_dealt": 0.0,
-		"damage_taken": 0.0,
-		"reactions": {"lightning_chain": 0, "shatter": 0, "thermal_shock": 0},
-		"rewards": [],
-		"debuffs_accepted": [],
-		"corrections": [],
-		"reward_offers": [],
-		"risk_rewards_offered": 0,
-		"risk_rewards_chosen": 0,
-		"rerolls_used": 0,
-		"debug_used": false,
-	}
-	player = {
-		"position": VIEW_SIZE * 0.5,
-		"radius": 16.0,
-		"hp": 100.0,
-		"stat_bonuses": {},
-		"level": 1,
-		"xp": 0.0,
-		"xp_next": 16.0,
-		"invulnerability": 0.0,
-		"skill_cooldown": 0.0,
-		"weapons": {"shell_pistol": 1},
-		"weapon_timers": {},
-		"weapon_shots": {},
-	}
+	resume_protection = 0.0
+	combat_feedback.reset()
+	metrics = metrics_recorder.create_run(RUN_SEED, risk_mode)
+	player = entity_factory.create_player(VIEW_SIZE)
 	_recalculate_player_stats()
 	state = GameState.PLAYING
 	_show_message("标准模式" if not risk_mode else "风险模式", 2.0)
@@ -228,17 +206,27 @@ func _start_run(use_risk_mode: bool) -> void:
 
 
 func _process(delta: float) -> void:
+	var simulation_blocked: bool = combat_feedback.is_simulation_blocked()
+	combat_feedback.update(delta)
 	if message_time > 0.0:
 		message_time -= delta
-	if state == GameState.PLAYING and not tutorial_visible and not paused:
+	if state == GameState.PLAYING and not tutorial_visible and not paused and not simulation_blocked:
 		_update_run(delta)
 	queue_redraw()
+
+
+func _resume_from_pause() -> void:
+	paused = false
+	resume_protection = 0.35
+	player.invulnerability = maxf(float(player.invulnerability), 0.35)
 
 
 func _update_run(delta: float) -> void:
 	total_time += delta
 	layer_time += delta
 	player.invulnerability = maxf(0.0, player.invulnerability - delta)
+	player.hit_flash = maxf(0.0, float(player.hit_flash) - delta)
+	resume_protection = maxf(0.0, resume_protection - delta)
 	player.skill_cooldown = maxf(0.0, player.skill_cooldown - delta)
 	_update_player(delta)
 	_update_spawning(delta)
@@ -260,7 +248,8 @@ func _update_run(delta: float) -> void:
 
 func _update_player(delta: float) -> void:
 	var direction: Vector2 = Input.get_vector("move_left", "move_right", "move_up", "move_down")
-	player.position += direction * float(player.speed) * delta
+	player.position += (direction * float(player.speed) + Vector2(player.knockback_velocity)) * delta
+	player.knockback_velocity = Vector2(player.knockback_velocity).move_toward(Vector2.ZERO, 900.0 * delta)
 	player.position.x = clampf(player.position.x, ARENA_MARGIN, VIEW_SIZE.x - ARENA_MARGIN)
 	player.position.y = clampf(player.position.y, ARENA_MARGIN, VIEW_SIZE.y - ARENA_MARGIN)
 	if Input.is_action_just_pressed("active_skill") and player.skill_cooldown <= 0.0:
@@ -273,6 +262,9 @@ func _update_player(delta: float) -> void:
 			"kind": "star_ring",
 			"follow_player": true,
 		})
+		combat_feedback.trigger_ring(player.position, Color("#ffd166"), 92.0, 0.35)
+		combat_feedback.trigger_ring(player.position, Color("#fff1a8"), 155.0, 0.45)
+		combat_feedback.trigger_shake(2.5, 0.16)
 		_show_message("星辉回路", 1.2)
 
 
@@ -288,7 +280,7 @@ func _update_spawning(delta: float) -> void:
 		_spawn_enemy(str(layer_config.boss), true)
 		elite_spawned = true
 
-	if enemies.size() >= MAX_ENEMIES:
+	if not entity_factory.has_capacity(enemies.size(), MAX_ENEMIES):
 		return
 	spawn_timer -= delta
 	if spawn_timer > 0.0:
@@ -314,28 +306,7 @@ func _spawn_enemy(enemy_id: String, centered := false) -> void:
 			2: position = Vector2(rng.randf_range(30.0, 1250.0), 700.0)
 			_: position = Vector2(20.0, rng.randf_range(30.0, 690.0))
 	var hp_scale: float = 1.0 + (layer - 1) * 0.22
-	var hp: float = float(data.hp) * hp_scale
-	enemies.append({
-		"uid": next_enemy_uid,
-		"id": enemy_id,
-		"name": data.name,
-		"type": data.type,
-		"position": position,
-		"radius": float(data.radius),
-		"hp": hp,
-		"max_hp": hp,
-		"speed": float(data.speed),
-		"damage": float(data.damage),
-		"xp": float(data.xp),
-		"armor": float(data.get("armor", 0.0)),
-		"color": Color(data.color),
-		"statuses": {},
-		"attack_timer": rng.randf_range(0.2, 1.0),
-		"special_timer": rng.randf_range(1.0, 2.0),
-		"shield": float(data.get("shield", 0.0)) * hp_scale,
-		"shield_max": float(data.get("shield", 0.0)) * hp_scale,
-		"dead": false,
-	})
+	enemies.append(entity_factory.create_enemy(data, enemy_id, position, hp_scale, next_enemy_uid, rng))
 	next_enemy_uid += 1
 
 
@@ -369,26 +340,26 @@ func _update_weapons(delta: float) -> void:
 
 
 func _fire_projectile(weapon: Dictionary, level: int, status: String, precision := false) -> bool:
-	if projectiles.size() >= MAX_PROJECTILES:
+	if not entity_factory.has_capacity(projectiles.size(), MAX_PROJECTILES):
 		return false
 	var target: int = _precision_target() if precision else _nearest_enemy(player.position)
 	if target < 0:
 		return false
 	var direction: Vector2 = (enemies[target].position - player.position).normalized()
-	projectiles.append({
-		"owner": "player",
-		"position": player.position,
-		"velocity": direction * float(weapon.projectile_speed),
-		"radius": 8.0 if precision else (5.0 if status == "mark" else 7.0),
-		"damage": float(weapon.damage) * (1.0 + 0.25 * (level - 1)) * (1.8 if precision else 1.0),
-		"status": status,
-		"status_duration": float(weapon.status_duration),
-		"heavy": false,
-		"life": 2.0,
-		"bounces": int(weapon.get("bounces", 0)) + level - 1,
-		"hit_ids": [],
-		"color": Color("#ffffff") if precision else Color(weapon.color),
-	})
+	projectiles.append(entity_factory.create_player_projectile(
+		player.position,
+		direction * float(weapon.projectile_speed),
+		weapon,
+		level,
+		status,
+		precision
+	))
+	combat_feedback.trigger_line(
+		player.position,
+		player.position + direction * (34.0 if precision else 24.0),
+		Color("#fff4bf") if precision else Color(weapon.color),
+		4.0 if precision else 2.0
+	)
 	return true
 
 
@@ -404,18 +375,27 @@ func _cast_frost_zone(weapon: Dictionary, level: int) -> bool:
 		"kind": "frost",
 		"damage": float(weapon.damage),
 	})
+	combat_feedback.trigger_ring(target, Color("#8ad8ff"), float(weapon.radius), 0.4)
 	return true
 
 
 func _slam_brick(weapon: Dictionary, level: int) -> bool:
-	var hit: bool = false
+	var has_target: bool = false
 	for enemy in enemies:
-		if enemy.dead:
-			continue
-		if player.position.distance_to(enemy.position) <= float(weapon.radius):
-			_damage_enemy(enemy, float(weapon.damage) * (1.0 + 0.3 * (level - 1)), "brick", true)
-			hit = true
-	return hit
+		if not enemy.dead and player.position.distance_to(enemy.position) <= float(weapon.radius):
+			has_target = true
+			break
+	if not has_target:
+		return false
+	zones.append({
+		"position": player.position,
+		"radius": float(weapon.radius),
+		"time": 0.14,
+		"tick": 10.0,
+		"kind": "brick_windup",
+		"damage": float(weapon.damage) * (1.0 + 0.3 * (level - 1)),
+	})
+	return true
 
 
 func _update_enemies(delta: float) -> void:
@@ -427,6 +407,7 @@ func _update_enemies(delta: float) -> void:
 	for enemy in enemies:
 		if enemy.dead:
 			continue
+		enemy.hit_flash = maxf(0.0, float(enemy.hit_flash) - delta)
 		_tick_statuses(enemy, delta)
 		if enemy.dead:
 			continue
@@ -447,7 +428,8 @@ func _update_enemies(delta: float) -> void:
 				direction = -direction
 			elif distance < 320.0:
 				direction = Vector2.ZERO
-		enemy.position += direction * float(enemy.speed) * speed_mult * delta
+		enemy.position += (direction * float(enemy.speed) * speed_mult + Vector2(enemy.knockback_velocity)) * delta
+		enemy.knockback_velocity = Vector2(enemy.knockback_velocity).move_toward(Vector2.ZERO, 720.0 * delta)
 
 		enemy.attack_timer -= delta
 		if enemy.id == "ember_spirit" and enemy.attack_timer <= 0.0:
@@ -461,39 +443,55 @@ func _update_enemies(delta: float) -> void:
 				var contact_damage: float = float(enemy.damage)
 				if enemy.id == "molten_brute" and enemy.hp < enemy.max_hp * 0.5:
 					contact_damage *= 1.35
-				_damage_player(contact_damage)
+				_damage_player(contact_damage, enemy.position)
 
 	enemies = enemies.filter(func(enemy: Dictionary) -> bool: return not enemy.dead)
 
 
 func _update_boss(enemy: Dictionary, delta: float) -> void:
+	if int(enemy.boss_phase) == 1 and float(enemy.shield) <= 0.0:
+		_set_boss_phase(enemy, 2, "核心暴露")
+	elif int(enemy.boss_phase) < 3 and float(enemy.hp) <= float(enemy.max_hp) * 0.35:
+		_set_boss_phase(enemy, 3, "星骸暴走")
 	enemy.special_timer -= delta
 	if enemy.special_timer <= 0.0:
-		enemy.special_timer = 4.0
+		var phase: int = int(enemy.boss_phase)
+		var interval: float = 4.0 if phase == 1 else (3.3 if phase == 2 else 2.6)
+		var warning_duration: float = 1.1 if phase < 3 else 0.9
+		var warning_radius: float = 92.0 if phase < 3 else 112.0
+		enemy.special_timer = interval
 		zones.append({
 			"position": player.position,
-			"radius": 92.0,
-			"time": 1.1,
-			"warning_duration": 1.1,
+			"radius": warning_radius,
+			"time": warning_duration,
+			"warning_duration": warning_duration,
 			"tick": 0.0,
 			"kind": "boss_warning",
-			"damage": 24.0,
+			"damage": 24.0 if phase < 3 else 30.0,
+			"phase": phase,
 		})
 
 
+func _set_boss_phase(enemy: Dictionary, phase: int, label: String) -> void:
+	enemy.boss_phase = phase
+	enemy.special_timer = 1.2
+	enemy.hit_flash = 0.3
+	combat_feedback.trigger_ring(enemy.position, Color("#d8c5ff"), float(enemy.radius) * 2.2, 0.5)
+	combat_feedback.trigger_shake(8.0, 0.32)
+	combat_feedback.trigger_hit_stop(0.05)
+	combat_feedback.trigger_screen_flash(Color("#c9b6e4"), 0.14)
+	_show_message(label, 1.5)
+
+
 func _fire_enemy_projectile(enemy: Dictionary) -> void:
-	if projectiles.size() >= MAX_PROJECTILES:
+	if not entity_factory.has_capacity(projectiles.size(), MAX_PROJECTILES):
 		return
 	var direction: Vector2 = (player.position - enemy.position).normalized()
-	projectiles.append({
-		"owner": "enemy",
-		"position": enemy.position,
-		"velocity": direction * 250.0,
-		"radius": 8.0,
-		"damage": float(enemy.damage),
-		"life": 3.0,
-		"color": Color("#ff7043"),
-	})
+	projectiles.append(entity_factory.create_enemy_projectile(
+		enemy.position,
+		direction * 250.0,
+		float(enemy.damage)
+	))
 
 
 func _update_projectiles(delta: float) -> void:
@@ -502,7 +500,7 @@ func _update_projectiles(delta: float) -> void:
 		projectile.life -= delta
 		if projectile.owner == "enemy":
 			if projectile.position.distance_to(player.position) <= projectile.radius + player.radius:
-				_damage_player(float(projectile.damage))
+				_damage_player(float(projectile.damage), projectile.position)
 				projectile.life = 0.0
 			continue
 		for enemy in enemies:
@@ -515,6 +513,7 @@ func _update_projectiles(delta: float) -> void:
 				if int(projectile.bounces) > 0:
 					var next: int = _nearest_enemy(projectile.position, projectile.hit_ids)
 					if next >= 0:
+						combat_feedback.trigger_line(projectile.position, enemies[next].position, Color("#7aa2ff"), 2.5)
 						projectile.velocity = (enemies[next].position - projectile.position).normalized() * projectile.velocity.length()
 						projectile.bounces -= 1
 					else:
@@ -538,6 +537,9 @@ func _damage_enemy(enemy: Dictionary, base_damage: float, source: String, heavy:
 		_chain_reaction(enemy, raw_damage * float(reaction.secondary_multiplier))
 		_reaction_text(enemy.position, "雷链", "lightning_chain")
 		_record_reaction("lightning_chain")
+		combat_feedback.trigger_ring(enemy.position, Color("#ffe66d"), 58.0, 0.25)
+		combat_feedback.trigger_shake(5.0, 0.16)
+		combat_feedback.trigger_hit_stop(0.025)
 	if heavy and _has_status(enemy, "freeze"):
 		var reaction := _reaction("shatter")
 		_remove_status(enemy, "freeze")
@@ -545,22 +547,50 @@ func _damage_enemy(enemy: Dictionary, base_damage: float, source: String, heavy:
 		_area_damage(enemy.position, float(reaction.radius), raw_damage * float(reaction.secondary_multiplier), enemy)
 		_reaction_text(enemy.position, "破碎", "shatter")
 		_record_reaction("shatter")
+		combat_feedback.trigger_ring(enemy.position, Color("#8ad8ff"), 82.0, 0.3)
+		combat_feedback.trigger_shake(7.0, 0.2)
+		combat_feedback.trigger_hit_stop(0.045)
 	if source == "burn_hit" and _has_status(enemy, "freeze"):
 		var reaction := _reaction("thermal_shock")
 		_remove_status(enemy, "freeze")
 		raw_damage *= float(reaction.damage_multiplier)
 		_reaction_text(enemy.position, "热冲击", "thermal_shock")
 		_record_reaction("thermal_shock")
+		combat_feedback.trigger_ring(enemy.position, Color("#ff8c42"), 68.0, 0.28)
+		combat_feedback.trigger_shake(6.0, 0.18)
+		combat_feedback.trigger_hit_stop(0.035)
 
-	var damage: float = raw_damage * 100.0 / (100.0 + float(enemy.armor))
-	var displayed_damage: float = damage
-	if float(enemy.shield) > 0.0:
-		var absorbed: float = minf(float(enemy.shield), damage)
-		enemy.shield -= absorbed
-		damage -= absorbed
+	var damage_result: Dictionary = combat_rules.resolve_damage(raw_damage, float(enemy.armor), float(enemy.shield))
+	var displayed_damage: float = float(damage_result.armored_damage)
+	var hp_damage: float = float(damage_result.hp_damage)
+	enemy.shield -= float(damage_result.shield_damage)
 	metrics.damage_dealt += maxf(0.0, displayed_damage)
-	enemy.hp -= damage
-	_float_text(enemy.position, str(int(displayed_damage)), Color("#8ad8ff") if displayed_damage > damage else Color.WHITE)
+	enemy.hp -= hp_damage
+	enemy.hit_flash = 0.11 if heavy else 0.07
+	var knockback_strength: float = _knockback_strength(source, heavy)
+	if knockback_strength > 0.0:
+		var knockback_scale: float = 1.0
+		if enemy.type == "elite":
+			knockback_scale = 0.55
+		elif enemy.type == "boss":
+			knockback_scale = 0.25
+		var knockback_direction: Vector2 = (enemy.position - player.position).normalized()
+		enemy.knockback_velocity += knockback_direction * knockback_strength * knockback_scale
+	if source != "burn_dot":
+		combat_feedback.trigger_impact(enemy.position, _impact_color(source), 22.0 if heavy else 15.0)
+	if heavy:
+		combat_feedback.trigger_shake(4.0, 0.14)
+		combat_feedback.trigger_hit_stop(0.035)
+	combat_events.publish_damage({
+		"target": "enemy",
+		"target_uid": int(enemy.uid),
+		"source": source,
+		"raw_damage": raw_damage,
+		"armored_damage": displayed_damage,
+		"shield_damage": float(damage_result.shield_damage),
+		"hp_damage": hp_damage,
+	})
+	_float_text(enemy.position, str(int(displayed_damage)), Color("#8ad8ff") if displayed_damage > hp_damage else Color.WHITE)
 	if enemy.hp <= 0.0:
 		_kill_enemy(enemy)
 
@@ -575,6 +605,7 @@ func _chain_reaction(origin: Dictionary, damage: float) -> void:
 	)
 	var max_targets: int = int(_reaction("lightning_chain").max_targets)
 	for i in mini(max_targets, candidates.size()):
+		combat_feedback.trigger_line(origin.position, candidates[i].position, Color("#ffe66d"), 3.0)
 		_damage_enemy(candidates[i], damage, "chain", false, true)
 
 
@@ -587,17 +618,20 @@ func _area_damage(position: Vector2, radius: float, damage: float, ignored: Dict
 
 
 func _apply_status(enemy: Dictionary, status: String, duration: float) -> void:
-	if status.is_empty():
-		return
-	if status == "freeze":
-		duration *= float(player.freeze_duration_mult)
-	var status_data: Dictionary = statuses_data.get(status, {})
-	var max_stacks: int = int(status_data.get("max_stacks", 1))
-	var statuses: Dictionary = enemy.statuses
-	var current: Dictionary = statuses.get(status, {"stacks": 0, "time": 0.0, "tick": 1.0})
-	current.stacks = mini(max_stacks, int(current.stacks) + 1)
-	current.time = maxf(float(current.time), duration * float(player.status_mult))
-	statuses[status] = current
+	combat_rules.apply_status(
+		enemy,
+		status,
+		duration,
+		float(player.status_mult),
+		float(player.freeze_duration_mult),
+		statuses_data
+	)
+	if not status.is_empty():
+		combat_events.publish_status({
+			"target_uid": int(enemy.uid),
+			"status": status,
+			"duration": duration,
+		})
 
 
 func _tick_statuses(enemy: Dictionary, delta: float) -> void:
@@ -617,29 +651,44 @@ func _tick_statuses(enemy: Dictionary, delta: float) -> void:
 
 
 func _has_status(enemy: Dictionary, status: String) -> bool:
-	return enemy.statuses.has(status)
+	return combat_rules.has_status(enemy, status)
 
 
 func _remove_status(enemy: Dictionary, status: String) -> void:
-	enemy.statuses.erase(status)
+	combat_rules.remove_status(enemy, status)
 
 
 func _kill_enemy(enemy: Dictionary) -> void:
 	enemy.dead = true
 	metrics.kills += 1
+	combat_feedback.trigger_ring(enemy.position, Color(enemy.color), float(enemy.radius) * 1.6, 0.22)
 	pickups.append({
 		"position": enemy.position + Vector2.from_angle(loot_rng.randf_range(0.0, TAU)) * loot_rng.randf_range(0.0, 18.0),
 		"value": float(enemy.xp),
 	})
 
 
-func _damage_player(amount: float) -> void:
-	if player.invulnerability > 0.0 or state != GameState.PLAYING:
+func _damage_player(amount: float, source_position: Vector2 = Vector2.ZERO) -> void:
+	if player.invulnerability > 0.0 or resume_protection > 0.0 or state != GameState.PLAYING:
 		return
 	amount *= float(player.contact_damage_mult)
 	player.hp -= amount
 	metrics.damage_taken += amount
+	combat_events.publish_damage({
+		"target": "player",
+		"source": "enemy",
+		"raw_damage": amount,
+		"armored_damage": amount,
+		"shield_damage": 0.0,
+		"hp_damage": amount,
+	})
 	player.invulnerability = 0.55
+	player.hit_flash = 0.18
+	if source_position != Vector2.ZERO:
+		player.knockback_velocity += (player.position - source_position).normalized() * 180.0
+	combat_feedback.trigger_shake(7.0, 0.22)
+	combat_feedback.trigger_screen_flash(Color("#ff5d73"), 0.18)
+	combat_feedback.trigger_impact(player.position, Color("#ff6b6b"), 24.0)
 	_float_text(player.position, "-" + str(int(amount)), Color("#ff6b6b"))
 	if player.hp <= 0.0:
 		_finish_run("game_over")
@@ -657,12 +706,8 @@ func _update_pickups(delta: float) -> void:
 
 
 func _gain_xp(amount: float) -> void:
-	player.xp += amount
-	while player.xp >= player.xp_next:
-		player.xp -= player.xp_next
-		player.level += 1
-		player.xp_next = floorf(float(player.xp_next) * 1.22 + 5.0)
-		pending_reward_levels.append(int(player.level))
+	for gained_level in progression_service.grant_xp(player, amount):
+		pending_reward_levels.append(gained_level)
 	if state == GameState.PLAYING and not pending_reward_levels.is_empty():
 		_open_next_reward()
 
@@ -677,24 +722,13 @@ func _open_next_reward() -> void:
 
 
 func _roll_reward_choices(excluded_ids: Array[String]) -> void:
-	reward_choices.clear()
 	var pool: Array[Dictionary] = _build_reward_pool(excluded_ids)
-	if current_reward_level <= 4:
-		_take_guided_reward(pool, "weapon_unlock")
-	if risk_mode and current_reward_level >= 3:
-		_take_guided_reward(pool, "risk")
-	while reward_choices.size() < 3 and not pool.is_empty():
-		var index: int = reward_rng.randi_range(0, pool.size() - 1)
-		if _choices_have_risk() and not str(pool[index].get("debuff_id", "")).is_empty():
-			pool.remove_at(index)
-			continue
-		reward_choices.append(pool[index])
-		pool.remove_at(index)
+	reward_choices = reward_service.roll_choices(pool, current_reward_level, risk_mode, reward_rng)
 	var offer_ids: Array[String] = []
 	for reward in reward_choices:
 		offer_ids.append(str(reward.id))
 	metrics.reward_offers.append(offer_ids)
-	if _choices_have_risk():
+	if reward_service.choices_have_risk(reward_choices):
 		metrics.risk_rewards_offered += 1
 
 
@@ -719,25 +753,14 @@ func _can_reroll_rewards() -> bool:
 
 
 func _build_reward_pool(excluded_ids: Array[String]) -> Array[Dictionary]:
-	var pool: Array[Dictionary] = []
-	for reward in rewards:
-		if excluded_ids.has(str(reward.id)):
-			continue
-		if not risk_mode and not str(reward.get("debuff_id", "")).is_empty():
-			continue
-		if reward.type == "weapon_unlock" and player.weapons.has(reward.weapon_id):
-			continue
-		if reward.type == "weapon_level" and not player.weapons.has(reward.weapon_id):
-			continue
-		if reward.type == "weapon_level" and int(player.weapons[reward.weapon_id]) >= 3:
-			continue
-		var debuff_id: String = str(reward.get("debuff_id", ""))
-		if not debuff_id.is_empty() and active_debuffs.size() >= MAX_ACTIVE_DEBUFFS:
-			continue
-		if not debuff_id.is_empty() and active_debuffs.has(debuff_id):
-			continue
-		pool.append(reward)
-	return pool
+	return reward_service.build_pool(
+		rewards,
+		risk_mode,
+		player.weapons,
+		active_debuffs,
+		MAX_ACTIVE_DEBUFFS,
+		excluded_ids
+	)
 
 
 func _choose_reward(index: int) -> void:
@@ -815,7 +838,16 @@ func _update_zones(delta: float) -> void:
 		zone.tick -= delta
 		if zone.kind == "boss_warning" and zone.time <= 0.0:
 			if player.position.distance_to(zone.position) <= zone.radius:
-				_damage_player(float(zone.damage))
+				_damage_player(float(zone.damage), zone.position)
+			combat_feedback.trigger_shake(9.0, 0.28)
+			combat_feedback.trigger_hit_stop(0.04)
+			combat_feedback.trigger_ring(zone.position, Color("#ff6b6b"), float(zone.radius) * 1.15, 0.26)
+			zone.time = -10.0
+		elif zone.kind == "brick_windup" and zone.time <= 0.0:
+			for enemy in enemies:
+				if not enemy.dead and enemy.position.distance_to(zone.position) <= zone.radius:
+					_damage_enemy(enemy, float(zone.damage), "brick", true)
+			combat_feedback.trigger_ring(zone.position, Color("#e0a96d"), float(zone.radius), 0.24)
 			zone.time = -10.0
 		elif zone.tick <= 0.0:
 			zone.tick = 0.55
@@ -846,56 +878,19 @@ func _advance_layer() -> void:
 
 
 func _nearest_enemy(position: Vector2, ignored: Array = []) -> int:
-	var best: int = -1
-	var best_distance: float = INF
-	for i in enemies.size():
-		var enemy: Dictionary = enemies[i]
-		if enemy.dead or ignored.has(enemy.uid):
-			continue
-		var distance: float = position.distance_squared_to(enemy.position)
-		if distance < best_distance:
-			best_distance = distance
-			best = i
-	return best
+	return targeting_service.nearest_enemy(enemies, position, ignored)
 
 
 func _precision_target() -> int:
-	var best: int = -1
-	var best_score: float = -INF
-	for i in enemies.size():
-		var enemy: Dictionary = enemies[i]
-		if enemy.dead:
-			continue
-		var score: float = float(enemy.hp)
-		if _has_status(enemy, "mark"):
-			score += 100000.0
-		if score > best_score:
-			best_score = score
-			best = i
-	return best
+	return targeting_service.precision_target(enemies)
 
 
 func _densest_enemy_position() -> Vector2:
-	var best: Vector2 = Vector2.ZERO
-	var best_count: int = 0
-	for candidate in enemies:
-		if candidate.dead:
-			continue
-		var count: int = 0
-		for enemy in enemies:
-			if not enemy.dead and enemy.position.distance_to(candidate.position) < 120.0:
-				count += 1
-		if count > best_count:
-			best_count = count
-			best = candidate.position
-	return best
+	return targeting_service.densest_enemy_position(enemies, 120.0)
 
 
 func _has_enemy_type(type_name: String) -> bool:
-	for enemy in enemies:
-		if not enemy.dead and enemy.type == type_name:
-			return true
-	return false
+	return targeting_service.has_enemy_type(enemies, type_name)
 
 
 func _current_layer_config() -> Dictionary:
@@ -906,31 +901,7 @@ func _current_layer_config() -> Dictionary:
 
 
 func _reaction(reaction_id: String) -> Dictionary:
-	return reactions_data.get(reaction_id, {})
-
-
-func _take_guided_reward(pool: Array[Dictionary], kind: String) -> void:
-	if reward_choices.size() >= 3:
-		return
-	var candidates: Array[int] = []
-	for i in pool.size():
-		var reward: Dictionary = pool[i]
-		if kind == "weapon_unlock" and reward.type == "weapon_unlock":
-			candidates.append(i)
-		elif kind == "risk" and not str(reward.get("debuff_id", "")).is_empty():
-			candidates.append(i)
-	if candidates.is_empty():
-		return
-	var candidate_index: int = candidates[reward_rng.randi_range(0, candidates.size() - 1)]
-	reward_choices.append(pool[candidate_index])
-	pool.remove_at(candidate_index)
-
-
-func _choices_have_risk() -> bool:
-	for reward in reward_choices:
-		if not str(reward.get("debuff_id", "")).is_empty():
-			return true
-	return false
+	return combat_rules.reaction(reactions_data, reaction_id)
 
 
 func _continue_after_choice() -> void:
@@ -950,48 +921,52 @@ func _collect_remaining_pickups() -> void:
 
 
 func _recalculate_player_stats(heal_amount := 0.0) -> void:
-	var bonuses: Dictionary = player.get("stat_bonuses", {})
-	for key in BASE_PLAYER_STATS.keys():
-		var value: float = float(BASE_PLAYER_STATS[key]) + float(bonuses.get(key, 0.0))
-		for debuff_id in active_debuffs:
-			var modifiers: Dictionary = debuffs_data[debuff_id].modifiers
-			if modifiers.has(key):
-				value *= float(modifiers[key])
-		player[key] = value
-	player.hp = minf(float(player.max_hp), float(player.hp) + heal_amount)
+	progression_service.recalculate_stats(
+		player,
+		BASE_PLAYER_STATS,
+		active_debuffs,
+		debuffs_data,
+		heal_amount
+	)
 
 
 func _record_reaction(reaction_id: String) -> void:
-	var reaction_metrics: Dictionary = metrics.reactions
-	reaction_metrics[reaction_id] = int(reaction_metrics.get(reaction_id, 0)) + 1
+	metrics_recorder.record_reaction(metrics, reaction_id)
+	combat_events.publish_reaction({"reaction_id": reaction_id})
+
+
+func _knockback_strength(source: String, heavy: bool) -> float:
+	if heavy or source == "brick":
+		return 280.0
+	match source:
+		"mark": return 55.0
+		"shock": return 45.0
+		"area": return 100.0
+		"chain": return 40.0
+		_: return 0.0
+
+
+func _impact_color(source: String) -> Color:
+	match source:
+		"mark": return Color("#ffd166")
+		"shock", "chain": return Color("#7aa2ff")
+		"frost": return Color("#8ad8ff")
+		"brick", "area": return Color("#e0a96d")
+		"burn_hit": return Color("#ff7043")
+		_: return Color.WHITE
 
 
 func _finish_run(result: String) -> void:
 	if run_logged:
 		return
 	run_logged = true
-	metrics.result = result
-	metrics.duration_seconds = total_time
-	metrics.layer_reached = layer
-	metrics.level_reached = int(player.level)
-	metrics.active_debuffs = active_debuffs.duplicate()
-	metrics.weapons = player.weapons.duplicate()
-	var metrics_path: String = "user://vertical_slice_runs.jsonl"
-	var mode: FileAccess.ModeFlags = FileAccess.READ_WRITE if FileAccess.file_exists(metrics_path) else FileAccess.WRITE_READ
-	var file: FileAccess = FileAccess.open(metrics_path, mode)
-	if file:
-		file.seek_end()
-		file.store_line(JSON.stringify(metrics))
-		file.flush()
-		metrics_saved = file.get_error() == OK
+	metrics.feedback_mode = "reduced" if combat_feedback.reduced_motion else "full"
+	metrics_saved = metrics_recorder.finalize_and_save(metrics, result, total_time, layer, player, active_debuffs)
 	state = GameState.VICTORY if result == "victory" else GameState.GAME_OVER
 
 
 func _find_by_id(rows: Array[Dictionary], id: String) -> Dictionary:
-	for row in rows:
-		if row.id == id:
-			return row
-	return {}
+	return data_repository.find_by_id(rows, id)
 
 
 func _show_message(text: String, duration: float) -> void:
@@ -1030,8 +1005,14 @@ func _draw() -> void:
 	if state == GameState.MENU:
 		_draw_menu()
 		return
+	draw_set_transform(combat_feedback.shake_offset())
 	_draw_world()
+	draw_set_transform(Vector2.ZERO)
 	_draw_hud()
+	if combat_feedback.screen_flash_remaining > 0.0:
+		var flash_color: Color = combat_feedback.screen_flash_color
+		flash_color.a = combat_feedback.screen_flash_alpha()
+		draw_rect(Rect2(Vector2.ZERO, VIEW_SIZE), flash_color)
 	if state == GameState.REWARD:
 		_draw_reward_overlay()
 	elif state == GameState.CORRECTION:
@@ -1051,20 +1032,29 @@ func _draw_world() -> void:
 		var color: Color = Color("#55aaff33")
 		if zone.kind == "star_ring":
 			color = Color("#ffd16633")
+		elif zone.kind == "brick_windup":
+			color = Color("#e0a96d22")
 		elif zone.kind == "boss_warning":
-			color = Color("#ff4d4d44")
+			color = Color("#ff303055") if int(zone.get("phase", 1)) >= 3 else Color("#ff4d4d44")
 		draw_circle(zone.position, float(zone.radius), color)
 		if zone.kind == "boss_warning":
 			var warning_duration: float = float(zone.get("warning_duration", 1.1))
 			var warning_ratio: float = clampf(float(zone.time) / warning_duration, 0.0, 1.0)
 			draw_arc(zone.position, float(zone.radius), -PI * 0.5, -PI * 0.5 + TAU * warning_ratio, 48, Color("#ff6b6b"), 6.0)
 			draw_string(body_font, zone.position + Vector2(-24.0, -float(zone.radius) - 10.0), "%.1f" % maxf(0.0, float(zone.time)), HORIZONTAL_ALIGNMENT_CENTER, 48, 18, Color.WHITE)
+		elif zone.kind == "brick_windup":
+			var brick_ratio: float = clampf(float(zone.time) / 0.14, 0.0, 1.0)
+			draw_arc(zone.position, float(zone.radius) * (1.0 - brick_ratio * 0.2), 0.0, TAU, 36, Color("#e0a96d"), 4.0)
 	for pickup in pickups:
 		draw_circle(pickup.position, 5.0, Color("#7cf6ff"))
 	for projectile in projectiles:
 		draw_circle(projectile.position, float(projectile.radius), projectile.color)
 	for enemy in enemies:
-		draw_circle(enemy.position, float(enemy.radius), enemy.color)
+		var enemy_color: Color = Color.WHITE if float(enemy.hit_flash) > 0.0 else Color(enemy.color)
+		draw_circle(enemy.position, float(enemy.radius), enemy_color)
+		if enemy.id == "star_bone_colossus" and int(enemy.boss_phase) >= 2:
+			var core_color: Color = Color("#ff6b6b") if int(enemy.boss_phase) >= 3 else Color("#ffe66d")
+			draw_circle(enemy.position, float(enemy.radius) * 0.38, core_color)
 		if float(enemy.shield) > 0.0:
 			draw_arc(enemy.position, float(enemy.radius) + 5.0, 0.0, TAU, 28, Color("#8ad8ff"), 3.0)
 		var hp_ratio: float = maxf(0.0, float(enemy.hp) / float(enemy.max_hp))
@@ -1083,11 +1073,34 @@ func _draw_world() -> void:
 				status_color = status_colors[status]
 			draw_circle(enemy.position + Vector2(-12.0 + offset, enemy.radius + 7.0), 3.5, status_color)
 			offset += 9.0
-	var player_color: Color = Color("#ffffff") if player.invulnerability <= 0.0 else Color("#ff9f9f")
+	var player_color: Color = Color("#ffffff")
+	if float(player.hit_flash) > 0.0:
+		player_color = Color("#ff6b6b")
+	elif player.invulnerability > 0.0:
+		player_color = Color("#ffb3b3")
 	draw_circle(player.position, float(player.radius), player_color)
 	draw_arc(player.position, float(player.radius) + 5.0, 0.0, TAU, 24, Color("#7cf6ff"), 2.0)
 	for entry in floating_text:
 		draw_string(body_font, entry.position, entry.text, HORIZONTAL_ALIGNMENT_CENTER, -1, 15, entry.color)
+	_draw_combat_effects()
+
+
+func _draw_combat_effects() -> void:
+	for effect in combat_feedback.effects:
+		var progress: float = 1.0 - float(effect.time) / float(effect.duration)
+		var color: Color = Color(effect.color)
+		color.a *= 1.0 - progress
+		match str(effect.kind):
+			"impact":
+				var impact_radius: float = lerpf(3.0, float(effect.radius), progress)
+				draw_circle(effect.position, impact_radius, color, false, 2.0)
+				draw_line(effect.position - Vector2(impact_radius, 0.0), effect.position + Vector2(impact_radius, 0.0), color, 2.0)
+				draw_line(effect.position - Vector2(0.0, impact_radius), effect.position + Vector2(0.0, impact_radius), color, 2.0)
+			"ring":
+				var ring_radius: float = lerpf(float(effect.radius) * 0.35, float(effect.radius), progress)
+				draw_arc(effect.position, ring_radius, 0.0, TAU, 40, color, 3.0)
+			"line":
+				draw_line(effect.start, effect.end, color, float(effect.width))
 
 
 func _draw_hud() -> void:
@@ -1111,6 +1124,7 @@ func _draw_hud() -> void:
 		debuff_names.append(str(debuffs_data[id].name))
 	draw_string(body_font, Vector2(24, 154), "Debuff：" + ("无" if debuff_names.is_empty() else " / ".join(debuff_names)), HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#ff9f7f"))
 	draw_string(body_font, Vector2(1060, 30), "F10 跳层（调试）", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#66758c"))
+	draw_string(body_font, Vector2(1060, 50), "F8 低动态反馈", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#66758c"))
 	draw_string(body_font, Vector2(930, 80), "状态", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color.WHITE)
 	draw_string(body_font, Vector2(930, 104), "标记  感电  冻结  灼烧", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#b8c5d6"))
 	draw_circle(Vector2(938, 121), 4.0, Color("#ffd166"))
@@ -1120,6 +1134,14 @@ func _draw_hud() -> void:
 	draw_string(body_font, Vector2(930, 150), "雷链：标记+感电", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#ffe66d"))
 	draw_string(body_font, Vector2(930, 170), "破碎：冻结+重击", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#8ad8ff"))
 	draw_string(body_font, Vector2(930, 190), "热冲击：冻结+灼烧", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#ff8c42"))
+	if debug_overlay_visible:
+		draw_rect(Rect2(930, 225, 320, 135), Color("#080b12dd"))
+		draw_string(body_font, Vector2(945, 250), "P2 Debug", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("#7cf6ff"))
+		draw_string(body_font, Vector2(945, 275), "FPS: %d" % Engine.get_frames_per_second(), HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color.WHITE)
+		draw_string(body_font, Vector2(945, 298), "Enemies: %d / %d" % [enemies.size(), MAX_ENEMIES], HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color.WHITE)
+		draw_string(body_font, Vector2(945, 321), "Projectiles: %d / %d" % [projectiles.size(), MAX_PROJECTILES], HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color.WHITE)
+		draw_string(body_font, Vector2(945, 344), "Zones: %d  Pickups: %d" % [zones.size(), pickups.size()], HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color.WHITE)
+		draw_string(body_font, Vector2(1110, 250), "Motion: %s" % ("LOW" if combat_feedback.reduced_motion else "FULL"), HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#ffd166"))
 	if message_time > 0.0:
 		draw_string(title_font, Vector2(480, 82), message, HORIZONTAL_ALIGNMENT_CENTER, 320, 28, Color("#ffe66d"))
 

@@ -18,6 +18,7 @@ func _run() -> void:
 	_test_mode(game, true)
 	_test_entity_limits(game)
 	_test_late_game_reroll_guard(game)
+	_test_combat_feel(game)
 
 	game.queue_free()
 	await process_frame
@@ -140,3 +141,42 @@ func _test_late_game_reroll_guard(game: Node2D) -> void:
 	for reward in game.reward_choices:
 		unchanged_ids.append(str(reward.id))
 	assert(unchanged_ids == original_ids)
+
+
+func _test_combat_feel(game: Node2D) -> void:
+	game._start_run(false)
+	game.tutorial_visible = false
+	game._spawn_enemy("star_bone_colossus", true)
+	var boss: Dictionary = game.enemies[0]
+
+	var initial_hp: float = float(boss.hp)
+	var initial_shield: float = float(boss.shield)
+	var brick: Dictionary = game._find_by_id(game.weapons, "cracked_brick")
+	boss.position = game.player.position + Vector2(20.0, 0.0)
+	assert(game._slam_brick(brick, 1))
+	assert(game.zones.any(func(zone: Dictionary) -> bool: return zone.kind == "brick_windup"))
+	game._update_zones(0.15)
+	assert(float(boss.hp) < initial_hp or float(boss.shield) < initial_shield)
+	assert(float(boss.hit_flash) > 0.0)
+	assert(Vector2(boss.knockback_velocity).length() > 0.0)
+	assert(game.combat_feedback.hit_stop_remaining <= 0.05)
+	assert(game.combat_feedback.effects.size() <= game.combat_feedback.MAX_EFFECTS)
+
+	game.paused = true
+	game._resume_from_pause()
+	assert(not game.paused)
+	assert(game.resume_protection > 0.0)
+	assert(float(game.player.invulnerability) >= 0.35)
+
+	boss.shield = 0.0
+	game._update_boss(boss, 0.0)
+	assert(int(boss.boss_phase) == 2)
+	boss.hp = float(boss.max_hp) * 0.34
+	game._update_boss(boss, 0.0)
+	assert(int(boss.boss_phase) == 3)
+	boss.special_timer = 0.0
+	game._update_boss(boss, 0.0)
+	var warning: Dictionary = game.zones.back()
+	assert(warning.kind == "boss_warning")
+	assert(float(warning.warning_duration) >= 0.9)
+	assert(float(warning.radius) >= 112.0)
