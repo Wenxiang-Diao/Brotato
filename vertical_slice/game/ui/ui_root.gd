@@ -3,6 +3,15 @@ extends CanvasLayer
 
 const Tokens := preload("res://game/ui/theme/ui_tokens.gd")
 const DeviceManager := preload("res://game/ui/input_device_manager.gd")
+const INPUT_SETTINGS_PATH := "user://input_bindings.cfg"
+const CONFIGURABLE_ACTIONS: Array[StringName] = [
+	&"move_up",
+	&"move_down",
+	&"move_left",
+	&"move_right",
+	&"active_skill",
+	&"ui_pause",
+]
 
 signal start_requested(risk_mode: bool)
 signal reward_selected(index: int)
@@ -29,9 +38,11 @@ var hp_label: Label
 var level_label: Label
 var timer_label: Label
 var mode_label: Label
-var skill_button: Button
+var skill_button: PanelContainer
+var skill_label: Label
 var weapon_row: HBoxContainer
 var debuff_row: HBoxContainer
+var combat_dock: PanelContainer
 var boss_panel: PanelContainer
 var boss_label: Label
 var menu_screen: Control
@@ -39,6 +50,7 @@ var reward_screen: Control
 var reward_cards: HBoxContainer
 var reroll_button: Button
 var reward_confirm_button: Button
+var reward_detail_label: Label
 var selected_reward_index := 0
 var correction_screen: Control
 var correction_detail: Label
@@ -55,6 +67,7 @@ var confirm_screen: Control
 var confirm_title: Label
 var confirm_body: Label
 var confirm_action: Callable
+var toast_panel: PanelContainer
 var toast_label: Label
 var debug_label: Label
 var prompt_label: Label
@@ -68,6 +81,8 @@ var last_weapons_signature := ""
 var last_debuff_signature := ""
 var scaled_icon_cache: Dictionary = {}
 var focus_return: Control
+var rebind_buttons: Dictionary = {}
+var awaiting_rebind: StringName = &""
 
 
 func _ready() -> void:
@@ -76,6 +91,7 @@ func _ready() -> void:
 	add_child(device_manager)
 	device_manager.device_changed.connect(_on_device_changed)
 	_ensure_input_actions()
+	_load_input_bindings()
 	_build_layers()
 	_build_hud()
 	_build_menu()
@@ -130,6 +146,10 @@ func _process(_delta: float) -> void:
 
 func _input(event: InputEvent) -> void:
 	if game == null or not event.is_pressed():
+		return
+	if not awaiting_rebind.is_empty():
+		_capture_rebind(event)
+		get_viewport().set_input_as_handled()
 		return
 	if event.is_action_pressed("ui_pause") and int(game.state) == game.GameState.PLAYING:
 		if settings_screen.visible:
@@ -244,38 +264,43 @@ func _full_control(node_name: String) -> Control:
 
 
 func _build_hud() -> void:
-	var top_left := _margin_anchor(hud, 24, 22, 340, 124)
-	var vitals := _panel_vbox(top_left, 6)
+	var top_left := _margin_anchor(hud, 20, 18, 292, 88)
+	var vitals := _panel_vbox(top_left, 3)
+	var hp_row := HBoxContainer.new()
+	hp_row.add_theme_constant_override("separation", 8)
+	vitals.add_child(hp_row)
+	hp_label = _label(hp_row, "", 15)
+	hp_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	level_label = _label(hp_row, "", 14, Tokens.TEXT_SECONDARY, HORIZONTAL_ALIGNMENT_RIGHT)
 	hp_bar = _progress(vitals, Tokens.HEALTH)
-	hp_label = _label(vitals, "", 16)
+	hp_bar.custom_minimum_size = Vector2(250, 14)
 	xp_bar = _progress(vitals, Tokens.XP)
-	level_label = _label(vitals, "", 16, Tokens.TEXT_SECONDARY)
+	xp_bar.custom_minimum_size = Vector2(250, 7)
 
-	var top_center := _center_anchor(hud, 430, 20, 420, 74)
-	var run_info := _panel_vbox(top_center, 2)
-	timer_label = _label(run_info, "00:00", 28, Tokens.TEXT, HORIZONTAL_ALIGNMENT_CENTER)
-	mode_label = _label(run_info, "", 15, Tokens.TEXT_SECONDARY, HORIZONTAL_ALIGNMENT_CENTER)
+	var top_center := _center_anchor(hud, 500, 14, 280, 54)
+	var run_info := _panel_vbox(top_center, 0)
+	timer_label = _label(run_info, "00:00", 24, Tokens.TEXT, HORIZONTAL_ALIGNMENT_CENTER)
+	mode_label = _label(run_info, "", 13, Tokens.TEXT_SECONDARY, HORIZONTAL_ALIGNMENT_CENTER)
 
-	var bottom_left := _margin_anchor(hud, 24, -116, 560, 92)
-	var loadout := _panel_vbox(bottom_left, 6)
+	combat_dock = _center_bottom_anchor(hud, 720, 88)
+	var dock_box := HBoxContainer.new()
+	dock_box.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT, Control.PRESET_MODE_MINSIZE, 8)
+	dock_box.alignment = BoxContainer.ALIGNMENT_CENTER
+	dock_box.add_theme_constant_override("separation", 6)
+	combat_dock.add_child(dock_box)
 	weapon_row = HBoxContainer.new()
-	weapon_row.add_theme_constant_override("separation", 8)
-	loadout.add_child(weapon_row)
-	skill_button = Button.new()
-	skill_button.custom_minimum_size = Vector2(230, 48)
-	skill_button.focus_mode = Control.FOCUS_NONE
-	loadout.add_child(skill_button)
-
-	var bottom_right := _margin_anchor(hud, -416, -98, 392, 74)
-	var statuses := _panel_vbox(bottom_right, 6)
-	var status_title := _label(statuses, "负面状态", 15, Tokens.TEXT_SECONDARY)
-	status_title.tooltip_text = "当前构筑承受的风险状态"
+	weapon_row.add_theme_constant_override("separation", 6)
+	dock_box.add_child(weapon_row)
+	skill_button = _hud_item(dock_box, "active_skill", "0.0", "星辉回路")
+	skill_label = skill_button.find_child("ItemLabel", true, false) as Label
+	var divider := VSeparator.new()
+	divider.custom_minimum_size.x = 8
+	dock_box.add_child(divider)
 	debuff_row = HBoxContainer.new()
-	debuff_row.alignment = BoxContainer.ALIGNMENT_END
-	debuff_row.add_theme_constant_override("separation", 8)
-	statuses.add_child(debuff_row)
+	debuff_row.add_theme_constant_override("separation", 6)
+	dock_box.add_child(debuff_row)
 
-	boss_panel = _margin_anchor(hud, 360, 96, 560, 76)
+	boss_panel = _center_anchor(hud, 390, 76, 500, 58)
 	var boss_box := _panel_vbox(boss_panel, 4)
 	boss_label = _label(boss_box, "", 18, Tokens.DANGER, HORIZONTAL_ALIGNMENT_CENTER)
 	boss_panel.visible = false
@@ -298,22 +323,28 @@ func _build_menu() -> void:
 
 func _build_reward() -> void:
 	reward_screen = _modal_root(modal_layer)
-	var center := _center_anchor(reward_screen, 70, 64, 1140, 592)
-	var box := _panel_vbox(center, 14)
-	_label(box, "升级：选择一项", 32, Tokens.TEXT, HORIZONTAL_ALIGNMENT_CENTER)
-	_label(box, "先比较关键收益，再确认风险代价", 16, Tokens.TEXT_SECONDARY, HORIZONTAL_ALIGNMENT_CENTER)
+	var center := _center_anchor(reward_screen, 80, 34, 1120, 652)
+	var box := _panel_vbox(center, 10)
+	_label(box, "升级选择", 28, Tokens.TEXT, HORIZONTAL_ALIGNMENT_CENTER)
+	_label(box, "卡片显示核心效果，悬停或聚焦查看完整说明", 14, Tokens.TEXT_SECONDARY, HORIZONTAL_ALIGNMENT_CENTER)
 	reward_cards = HBoxContainer.new()
 	reward_cards.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	reward_cards.alignment = BoxContainer.ALIGNMENT_CENTER
-	reward_cards.add_theme_constant_override("separation", 16)
+	reward_cards.add_theme_constant_override("separation", 12)
 	box.add_child(reward_cards)
+	var detail_panel := PanelContainer.new()
+	detail_panel.custom_minimum_size = Vector2(0, 84)
+	box.add_child(detail_panel)
+	reward_detail_label = _label(detail_panel, "", 15, Tokens.TEXT_SECONDARY)
+	reward_detail_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	reward_detail_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	var footer := HBoxContainer.new()
 	footer.alignment = BoxContainer.ALIGNMENT_CENTER
 	footer.add_theme_constant_override("separation", 16)
 	box.add_child(footer)
 	reroll_button = _button(footer, "重抽", func(): reroll_requested.emit())
 	reward_confirm_button = _button(footer, "确认选择", _confirm_selected_reward, Tokens.SUCCESS)
-	_label(footer, "方向键或数字键选择 / 移动到确认按钮后领取", 15, Tokens.TEXT_MUTED)
+	_label(footer, "选择卡片后确认", 14, Tokens.TEXT_MUTED)
 
 
 func _build_correction() -> void:
@@ -399,7 +430,14 @@ func _build_settings() -> void:
 	var volume_button := _button(box, "总音量：100%", _cycle_master_volume)
 	volume_button.name = "VolumeButton"
 	_label(box, "操作", 20, Tokens.PRIMARY)
-	_label(box, "键盘：方向键 / Enter / Esc / R\n手柄：方向输入 / A / B / X / Start", 15, Tokens.TEXT_SECONDARY)
+	_label(box, "按键设置", 16, Tokens.TEXT_SECONDARY)
+	_add_rebind_button(box, &"move_up", "向上移动")
+	_add_rebind_button(box, &"move_down", "向下移动")
+	_add_rebind_button(box, &"move_left", "向左移动")
+	_add_rebind_button(box, &"move_right", "向右移动")
+	_add_rebind_button(box, &"active_skill", "主动技能")
+	_add_rebind_button(box, &"ui_pause", "暂停")
+	_button(box, "恢复默认按键", _reset_input_bindings, Tokens.WARNING)
 	_label(box, "可访问性", 20, Tokens.PRIMARY)
 	var motion_button := _button(box, "低动态模式：关", func(): _toggle_reduced_motion())
 	motion_button.name = "MotionButton"
@@ -443,8 +481,9 @@ func _build_confirm() -> void:
 
 
 func _build_toast() -> void:
-	var anchor := _center_anchor(toast_layer, 440, 28, 400, 58)
-	toast_label = _label(anchor, "", 18, Tokens.SECONDARY, HORIZONTAL_ALIGNMENT_CENTER)
+	toast_panel = _center_anchor(toast_layer, 440, 18, 400, 52)
+	toast_panel.visible = false
+	toast_label = _label(toast_panel, "", 16, Tokens.SECONDARY, HORIZONTAL_ALIGNMENT_CENTER)
 	toast_label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
 
@@ -463,11 +502,15 @@ func _refresh_hud() -> void:
 	hp_label.text = "生命 %d / %d" % [int(game.player.hp), int(hp_max)]
 	xp_bar.max_value = maxf(1.0, float(game.player.xp_next))
 	xp_bar.value = float(game.player.xp)
-	level_label.text = "等级 %d  |  第 %d/%d 层" % [int(game.player.level), int(game.layer), int(game.run_config.get("layer_count", 6))]
+	level_label.text = "Lv.%d" % int(game.player.level)
 	timer_label.text = "%02d:%02d" % [int(game.total_time) / 60, int(game.total_time) % 60]
-	mode_label.text = "风险模式" if bool(game.risk_mode) else "标准模式"
-	skill_button.icon = _scaled_icon("active_skill", 40)
-	skill_button.text = "星辉回路  %.1fs" % float(game.player.skill_cooldown)
+	mode_label.text = "第 %d/%d 层 · %s" % [
+		int(game.layer),
+		int(game.run_config.get("layer_count", 6)),
+		"风险" if bool(game.risk_mode) else "标准",
+	]
+	skill_label.text = "%.1f" % float(game.player.skill_cooldown)
+	skill_button.tooltip_text = "星辉回路\n冷却 %.1f 秒\n释放跟随角色移动的灼烧区域。" % float(game.player.skill_cooldown)
 	var weapon_signature := str(game.player.weapons)
 	if weapon_signature != last_weapons_signature:
 		last_weapons_signature = weapon_signature
@@ -486,29 +529,32 @@ func _rebuild_weapons() -> void:
 	_clear_children(weapon_row)
 	for weapon_id in game.player.weapons.keys():
 		var data: Dictionary = game._find_by_id(game.weapons, str(weapon_id))
-		var button := Button.new()
-		button.custom_minimum_size = Vector2(116, 56)
-		button.expand_icon = true
-		button.icon = _scaled_icon(str(weapon_id), 42)
-		button.text = "Lv.%d" % int(game.player.weapons[weapon_id])
-		button.tooltip_text = str(data.get("name", weapon_id))
-		button.focus_mode = Control.FOCUS_NONE
-		weapon_row.add_child(button)
+		var panel := _hud_item(
+			weapon_row,
+			str(weapon_id),
+			"Lv.%d" % int(game.player.weapons[weapon_id]),
+			str(data.get("name", weapon_id))
+		)
+		panel.tooltip_text = "%s\n等级 %d\n%s" % [
+			str(data.get("name", weapon_id)),
+			int(game.player.weapons[weapon_id]),
+			_weapon_kind_label(str(data.get("kind", ""))),
+		]
 
 
 func _rebuild_debuffs() -> void:
 	_clear_children(debuff_row)
 	if game.active_debuffs.is_empty():
-		_label(debuff_row, "无", 16, Tokens.TEXT_MUTED)
+		debuff_row.visible = false
 		return
+	debuff_row.visible = true
 	for debuff_id in game.active_debuffs:
-		var button := Button.new()
-		button.custom_minimum_size = Vector2(52, 52)
-		button.expand_icon = true
-		button.icon = _scaled_icon(str(debuff_id), 42)
-		button.tooltip_text = str(game.debuffs_data[debuff_id].name) + "\n" + str(game.debuffs_data[debuff_id].description)
-		button.focus_mode = Control.FOCUS_NONE
-		debuff_row.add_child(button)
+		_hud_item(
+			debuff_row,
+			str(debuff_id),
+			_severity_label(str(game.debuffs_data[debuff_id].get("severity", "light"))).left(1),
+			str(game.debuffs_data[debuff_id].name) + "\n" + str(game.debuffs_data[debuff_id].description)
+		)
 
 
 func _refresh_boss() -> void:
@@ -535,12 +581,8 @@ func _refresh_rewards() -> void:
 	for i in game.reward_choices.size():
 		var reward: Dictionary = game.reward_choices[i]
 		var card := Button.new()
-		card.custom_minimum_size = Vector2(330, 380)
+		card.custom_minimum_size = Vector2(330, 310)
 		card.size_flags_vertical = Control.SIZE_EXPAND_FILL
-		card.alignment = HORIZONTAL_ALIGNMENT_CENTER
-		card.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		card.icon = _reward_icon(reward)
-		card.expand_icon = true
 		card.toggle_mode = true
 		card.button_pressed = i == selected_reward_index
 		card.set_meta("reward_index", i)
@@ -552,19 +594,37 @@ func _refresh_rewards() -> void:
 				severity,
 				str(game.debuffs_data[risk_id].description),
 			]
-		card.text = "%s\n%s\n\n%s%s" % [
-			str(reward.name),
-			_reward_type_label(str(reward.type)),
-			str(reward.description),
-			risk_text,
-		]
-		card.tooltip_text = card.text
+		var card_content := VBoxContainer.new()
+		card_content.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT, Control.PRESET_MODE_MINSIZE, 14)
+		card_content.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		card_content.alignment = BoxContainer.ALIGNMENT_CENTER
+		card_content.add_theme_constant_override("separation", 8)
+		card.add_child(card_content)
+		var image := TextureRect.new()
+		image.custom_minimum_size = Vector2(132, 150)
+		image.texture = _reward_icon(reward)
+		image.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		image.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		image.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		card_content.add_child(image)
+		_label(card_content, str(reward.name), 20, Tokens.TEXT, HORIZONTAL_ALIGNMENT_CENTER)
+		_label(card_content, _reward_type_label(str(reward.type)), 13, Tokens.PRIMARY, HORIZONTAL_ALIGNMENT_CENTER)
+		var summary := _reward_summary(reward)
+		var summary_label := _label(card_content, summary, 15, Tokens.TEXT_SECONDARY, HORIZONTAL_ALIGNMENT_CENTER)
+		summary_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		if not risk_id.is_empty():
+			_label(card_content, "附带%s风险" % _severity_label(str(game.debuffs_data[risk_id].get("severity", "light"))), 14, Tokens.WARNING, HORIZONTAL_ALIGNMENT_CENTER)
+		var detail := "%s\n%s%s" % [str(reward.description), _reward_detail(reward), risk_text]
+		card.tooltip_text = detail
+		card.set_meta("detail_text", detail)
 		card.focus_entered.connect(func(index: int = i): _select_reward(index))
+		card.mouse_entered.connect(func(index: int = i): _select_reward(index))
 		card.gui_input.connect(func(event: InputEvent, index: int = i): _on_reward_card_gui_input(event, index))
 		reward_cards.add_child(card)
 	reroll_button.disabled = not bool(game._can_reroll_rewards())
 	reroll_button.text = "重抽（剩余 %d）" % int(game.rerolls_remaining)
 	_focus_first(reward_cards)
+	_select_reward(selected_reward_index)
 
 
 func _refresh_correction() -> void:
@@ -598,7 +658,7 @@ func _refresh_results() -> void:
 
 func _refresh_toast() -> void:
 	var save_failed := results_screen.visible and not bool(game.metrics_saved)
-	toast_label.visible = float(game.message_time) > 0.0 or save_failed
+	toast_panel.visible = float(game.message_time) > 0.0 or save_failed
 	toast_label.text = "数据保存失败，请检查用户目录权限。" if save_failed else str(game.message)
 	toast_label.add_theme_color_override("font_color", Tokens.DANGER if save_failed else Tokens.SECONDARY)
 
@@ -623,14 +683,21 @@ func _build_summary() -> String:
 	var lines: Array[String] = []
 	for id in game.player.weapons.keys():
 		var data: Dictionary = game._find_by_id(game.weapons, str(id))
-		lines.append("%s  Lv.%d" % [str(data.get("name", id)), int(game.player.weapons[id])])
+		lines.append("%s  Lv.%d  ·  %s" % [
+			str(data.get("name", id)),
+			int(game.player.weapons[id]),
+			_weapon_kind_label(str(data.get("kind", ""))),
+		])
 	var debuffs := "无"
 	if not game.active_debuffs.is_empty():
 		var names: Array[String] = []
 		for id in game.active_debuffs:
-			names.append(str(game.debuffs_data[id].name))
-		debuffs = "、".join(names)
-	return "%s\n\n负面状态：%s\n\n反应目标：雷链 / 破碎 / 热冲击" % ["\n".join(lines), debuffs]
+			names.append("%s：%s" % [
+				str(game.debuffs_data[id].name),
+				str(game.debuffs_data[id].description),
+			])
+		debuffs = "\n".join(names)
+	return "武器\n%s\n\n负面状态\n%s\n\n反应说明\n标记 + 感电 = 雷链\n冻结 + 重击 = 破碎\n冻结 + 灼烧 = 热冲击" % ["\n".join(lines), debuffs]
 
 
 func _show_tutorial_step(step: int) -> void:
@@ -820,6 +887,9 @@ func _select_reward(index: int) -> void:
 	for child in reward_cards.get_children():
 		var card := child as Button
 		card.button_pressed = int(card.get_meta("reward_index", -1)) == selected_reward_index
+	if reward_detail_label and reward_cards.get_child_count() > selected_reward_index:
+		var selected := reward_cards.get_child(selected_reward_index) as Button
+		reward_detail_label.text = str(selected.get_meta("detail_text", ""))
 
 
 func _on_reward_card_gui_input(event: InputEvent, index: int) -> void:
@@ -834,6 +904,126 @@ func _confirm_selected_reward() -> void:
 	reward_selected.emit(selected_reward_index)
 
 
+func _reward_summary(reward: Dictionary) -> String:
+	match str(reward.get("type", "")):
+		"stat":
+			return str(reward.description)
+		"heal":
+			return "立即恢复 %d 生命" % int(reward.get("value", 0))
+		"weapon_unlock":
+			return "获得一把新武器"
+		"weapon_level":
+			return "武器等级 +1"
+	return str(reward.get("description", ""))
+
+
+func _reward_detail(reward: Dictionary) -> String:
+	var weapon_id := str(reward.get("weapon_id", ""))
+	if weapon_id.is_empty():
+		return ""
+	var weapon: Dictionary = game._find_by_id(game.weapons, weapon_id)
+	if weapon.is_empty():
+		return ""
+	return "\n冷却 %.2f 秒 · 基础伤害 %d" % [float(weapon.get("cooldown", 0.0)), int(weapon.get("damage", 0))]
+
+
+func _add_rebind_button(parent: Node, action: StringName, label_text: String) -> void:
+	var button := _button(parent, "", func(): _begin_rebind(action))
+	button.set_meta("label", label_text)
+	rebind_buttons[action] = button
+	_refresh_rebind_button(action)
+
+
+func _begin_rebind(action: StringName) -> void:
+	awaiting_rebind = action
+	var button := rebind_buttons[action] as Button
+	button.text = "%s：请按新按键（Esc 取消）" % str(button.get_meta("label", ""))
+
+
+func _capture_rebind(event: InputEvent) -> void:
+	if not event is InputEventKey or event.echo:
+		return
+	if event.keycode == KEY_ESCAPE:
+		_refresh_rebind_button(awaiting_rebind)
+		awaiting_rebind = &""
+		return
+	var action := awaiting_rebind
+	for other_action in CONFIGURABLE_ACTIONS:
+		if other_action == action:
+			continue
+		for current in InputMap.action_get_events(other_action):
+			if current is InputEventKey and current.physical_keycode == event.physical_keycode:
+				InputMap.action_erase_event(other_action, current)
+				_refresh_rebind_button(other_action)
+	for current in InputMap.action_get_events(action):
+		if current is InputEventKey:
+			InputMap.action_erase_event(action, current)
+	var replacement := InputEventKey.new()
+	replacement.physical_keycode = event.physical_keycode if event.physical_keycode != 0 else event.keycode
+	InputMap.action_add_event(action, replacement)
+	awaiting_rebind = &""
+	_refresh_rebind_button(action)
+	_save_input_bindings()
+
+
+func _refresh_rebind_button(action: StringName) -> void:
+	var button := rebind_buttons.get(action) as Button
+	if button == null:
+		return
+	var key_text := "未设置"
+	for event in InputMap.action_get_events(action):
+		if event is InputEventKey:
+			key_text = event.as_text_physical_keycode()
+			break
+	button.text = "%s：%s" % [str(button.get_meta("label", "")), key_text]
+
+
+func _save_input_bindings() -> void:
+	var config := ConfigFile.new()
+	for action in CONFIGURABLE_ACTIONS:
+		for event in InputMap.action_get_events(action):
+			if event is InputEventKey:
+				config.set_value("input", str(action), int(event.physical_keycode))
+				break
+	config.save(INPUT_SETTINGS_PATH)
+
+
+func _load_input_bindings() -> void:
+	var config := ConfigFile.new()
+	if config.load(INPUT_SETTINGS_PATH) != OK:
+		return
+	for action in CONFIGURABLE_ACTIONS:
+		var keycode := int(config.get_value("input", str(action), 0))
+		if keycode == 0:
+			continue
+		for current in InputMap.action_get_events(action):
+			if current is InputEventKey:
+				InputMap.action_erase_event(action, current)
+		var event := InputEventKey.new()
+		event.physical_keycode = keycode
+		InputMap.action_add_event(action, event)
+
+
+func _reset_input_bindings() -> void:
+	var defaults := {
+		&"move_up": KEY_W,
+		&"move_down": KEY_S,
+		&"move_left": KEY_A,
+		&"move_right": KEY_D,
+		&"active_skill": KEY_SPACE,
+		&"ui_pause": KEY_ESCAPE,
+	}
+	for action in CONFIGURABLE_ACTIONS:
+		for current in InputMap.action_get_events(action):
+			if current is InputEventKey:
+				InputMap.action_erase_event(action, current)
+		var event := InputEventKey.new()
+		event.physical_keycode = int(defaults[action])
+		InputMap.action_add_event(action, event)
+		_refresh_rebind_button(action)
+	_save_input_bindings()
+
+
 func _reward_type_label(type_name: String) -> String:
 	var labels := {
 		"stat": "属性强化",
@@ -842,6 +1032,14 @@ func _reward_type_label(type_name: String) -> String:
 		"weapon_level": "武器升级",
 	}
 	return str(labels.get(type_name, type_name))
+
+
+func _weapon_kind_label(kind: String) -> String:
+	return {
+		"projectile": "远程投射",
+		"zone": "范围区域",
+		"melee": "近战重击",
+	}.get(kind, kind)
 
 
 func _severity_label(severity: String) -> String:
@@ -950,6 +1148,21 @@ func _center_anchor(parent: Control, x: float, y: float, width: float, height: f
 	return result
 
 
+func _center_bottom_anchor(parent: Control, width: float, height: float) -> PanelContainer:
+	var result := PanelContainer.new()
+	result.set_anchor(SIDE_LEFT, 0.5)
+	result.set_anchor(SIDE_RIGHT, 0.5)
+	result.set_anchor(SIDE_TOP, 1.0)
+	result.set_anchor(SIDE_BOTTOM, 1.0)
+	result.offset_left = -width * 0.5
+	result.offset_right = width * 0.5
+	result.offset_top = -height - 18.0
+	result.offset_bottom = -18.0
+	result.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	parent.add_child(result)
+	return result
+
+
 func _panel_vbox(parent: Control, separation: int) -> VBoxContainer:
 	var result := VBoxContainer.new()
 	result.add_theme_constant_override("separation", separation)
@@ -987,6 +1200,30 @@ func _progress(parent: Node, fill_color: Color) -> ProgressBar:
 	result.add_theme_stylebox_override("fill", Tokens.panel_style(fill_color, fill_color, 4))
 	parent.add_child(result)
 	return result
+
+
+func _hud_item(parent: Node, icon_id: String, label_text: String, tooltip: String) -> PanelContainer:
+	var panel := PanelContainer.new()
+	panel.custom_minimum_size = Vector2(68, 68)
+	panel.tooltip_text = tooltip
+	panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	parent.add_child(panel)
+	var box := VBoxContainer.new()
+	box.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT, Control.PRESET_MODE_MINSIZE, 3)
+	box.alignment = BoxContainer.ALIGNMENT_CENTER
+	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.add_child(box)
+	var image := TextureRect.new()
+	image.custom_minimum_size = Vector2(42, 42)
+	image.texture = _scaled_icon(icon_id, 48)
+	image.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	image.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	image.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_child(image)
+	var label := _label(box, label_text, 13, Tokens.TEXT_SECONDARY, HORIZONTAL_ALIGNMENT_CENTER)
+	label.name = "ItemLabel"
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return panel
 
 
 func _icon(id: String) -> Texture2D:

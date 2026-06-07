@@ -504,3 +504,17 @@ P1 试玩就绪范围已经完成：
 - `急促脉冲` Debuff 改为纯负面代价：主动技能冷却增加 15%，最大生命降低 10%。
 - `analyze_playtest.py` 已同步输出退出上下文和结束生命字段。
 - 回归验证：数据校验通过，Python 单元测试通过，Godot 核心模块、运行时和 UI 测试均以退出码 0 通过。
+
+### 51. 真人测试前战斗 HUD 与奖励界面重做
+
+- 状态：已完成。
+- 战斗 HUD 收敛为左上生命/经验、顶部时间/层数和底部单一构筑条。
+- 武器、主动技能与 Debuff 已合并显示；没有 Debuff 时不再保留空面板。
+- 修复空 Toast 面板长期遮挡顶部信息的问题。
+- HUD 构筑项改为固定图标在上、等级或状态标记在下，悬停显示详细信息。
+- 奖励卡改为固定图标、名称、类型和简要收益；聚焦或悬停时在下方详情框显示完整说明。
+- 暂停页增加中文武器类型、完整 Debuff 描述和反应组合说明。
+- 设置页新增键盘按键重映射、冲突移除、持久化和恢复默认按键。
+- 实际渲染截图保存于 `vertical_slice/playtest/ui_review/`。
+- UI 完成报告记录于 `vertical_slice/design/23_p4_clean_hud_and_reward_ui_report.md`。
+- 真人测试前玩法复审记录于 `vertical_slice/design/24_vertical_slice_playability_reaudit.md`。

@@ -77,6 +77,7 @@ func _run() -> void:
 	assert(_has_focused_button(ui.pause_screen))
 	ui._open_settings()
 	assert(ui.settings_screen.visible)
+	assert(ui.rebind_buttons.size() == 6)
 	ui._cycle_ui_scale()
 	assert(is_equal_approx(ui.ui_scale, 1.1))
 	ui._toggle_reduced_motion()
