@@ -87,6 +87,32 @@ class ProjectContractTest(unittest.TestCase):
         selected = list((SLICE_ROOT / "selected_sources").rglob("*.md"))
         self.assertEqual(12, len(selected))
 
+    def test_p4_control_ui_and_approved_icons_exist(self):
+        ui_root = SLICE_ROOT / "game" / "ui"
+        for path in (
+            ui_root / "ui_root.tscn",
+            ui_root / "ui_root.gd",
+            ui_root / "input_device_manager.gd",
+            ui_root / "theme" / "ui_tokens.gd",
+            SLICE_ROOT / "tests" / "ui_runtime_test.gd",
+        ):
+            self.assertTrue(path.exists(), path)
+
+        icons = list((SLICE_ROOT / "assets" / "ui" / "icons").glob("*.png"))
+        self.assertEqual(22, len(icons))
+
+        main_scene = (SLICE_ROOT / "game" / "main.tscn").read_text(encoding="utf-8")
+        main_script = (SLICE_ROOT / "game" / "scripts" / "main.gd").read_text(
+            encoding="utf-8"
+        )
+        ui_script = (ui_root / "ui_root.gd").read_text(encoding="utf-8")
+        self.assertIn('res://game/ui/ui_root.tscn', main_scene)
+        self.assertIn("ui_root.bind_game(self)", main_script)
+        for layer in ("HUD", "ScreenStack", "ModalStack", "ToastLayer", "DebugLayer"):
+            self.assertIn(f'_full_control("{layer}")', ui_script)
+        for action in ("ui_reroll", "ui_details", "ui_pause"):
+            self.assertIn(action, ui_script)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,0 +1,244 @@
+[
+  {
+    "id": "01_shell_pistol",
+    "label": "01 弹壳手枪",
+    "category": "武器",
+    "file": "01_shell_pistol.png",
+    "size": [
+      256,
+      256
+    ],
+    "status": "preview_pending_approval"
+  },
+  {
+    "id": "02_magnetic_coin",
+    "label": "02 磁暴硬币",
+    "category": "武器",
+    "file": "02_magnetic_coin.png",
+    "size": [
+      256,
+      256
+    ],
+    "status": "preview_pending_approval"
+  },
+  {
+    "id": "03_frost_crystal",
+    "label": "03 冻流水晶",
+    "category": "武器",
+    "file": "03_frost_crystal.png",
+    "size": [
+      256,
+      256
+    ],
+    "status": "preview_pending_approval"
+  },
+  {
+    "id": "04_cracked_brick",
+    "label": "04 裂纹板砖",
+    "category": "武器",
+    "file": "04_cracked_brick.png",
+    "size": [
+      256,
+      256
+    ],
+    "status": "preview_pending_approval"
+  },
+  {
+    "id": "05_mark",
+    "label": "05 标记",
+    "category": "基础状态",
+    "file": "05_mark.png",
+    "size": [
+      256,
+      256
+    ],
+    "status": "preview_pending_approval"
+  },
+  {
+    "id": "06_shock",
+    "label": "06 感电",
+    "category": "基础状态",
+    "file": "06_shock.png",
+    "size": [
+      256,
+      256
+    ],
+    "status": "preview_pending_approval"
+  },
+  {
+    "id": "07_freeze",
+    "label": "07 冻结",
+    "category": "基础状态",
+    "file": "07_freeze.png",
+    "size": [
+      256,
+      256
+    ],
+    "status": "preview_pending_approval"
+  },
+  {
+    "id": "08_burn",
+    "label": "08 灼烧",
+    "category": "基础状态",
+    "file": "08_burn.png",
+    "size": [
+      256,
+      256
+    ],
+    "status": "preview_pending_approval"
+  },
+  {
+    "id": "09_lightning_chain",
+    "label": "09 雷链",
+    "category": "元素反应",
+    "file": "09_lightning_chain.png",
+    "size": [
+      256,
+      256
+    ],
+    "status": "preview_pending_approval"
+  },
+  {
+    "id": "10_shatter",
+    "label": "10 破碎",
+    "category": "元素反应",
+    "file": "10_shatter.png",
+    "size": [
+      256,
+      256
+    ],
+    "status": "preview_pending_approval"
+  },
+  {
+    "id": "11_thermal_shock",
+    "label": "11 热冲击",
+    "category": "元素反应",
+    "file": "11_thermal_shock.png",
+    "size": [
+      256,
+      256
+    ],
+    "status": "preview_pending_approval"
+  },
+  {
+    "id": "12_stellar_circuit",
+    "label": "12 星辉回路",
+    "category": "主动技能",
+    "file": "12_stellar_circuit.png",
+    "size": [
+      256,
+      256
+    ],
+    "status": "preview_pending_approval"
+  },
+  {
+    "id": "13_health",
+    "label": "13 生命",
+    "category": "通用 UI",
+    "file": "13_health.png",
+    "size": [
+      256,
+      256
+    ],
+    "status": "preview_pending_approval"
+  },
+  {
+    "id": "14_experience",
+    "label": "14 经验",
+    "category": "通用 UI",
+    "file": "14_experience.png",
+    "size": [
+      256,
+      256
+    ],
+    "status": "preview_pending_approval"
+  },
+  {
+    "id": "15_reroll",
+    "label": "15 重抽",
+    "category": "通用 UI",
+    "file": "15_reroll.png",
+    "size": [
+      256,
+      256
+    ],
+    "status": "preview_pending_approval"
+  },
+  {
+    "id": "16_pause_settings",
+    "label": "16 暂停/设置",
+    "category": "通用 UI",
+    "file": "16_pause_settings.png",
+    "size": [
+      256,
+      256
+    ],
+    "status": "preview_pending_approval"
+  },
+  {
+    "id": "17_shifted_balance",
+    "label": "17 重心偏移",
+    "category": "负面状态",
+    "file": "17_shifted_balance.png",
+    "size": [
+      256,
+      256
+    ],
+    "status": "preview_pending_approval"
+  },
+  {
+    "id": "18_hollow_defense",
+    "label": "18 防线空洞",
+    "category": "负面状态",
+    "file": "18_hollow_defense.png",
+    "size": [
+      256,
+      256
+    ],
+    "status": "preview_pending_approval"
+  },
+  {
+    "id": "19_rushed_pulse",
+    "label": "19 急促脉冲",
+    "category": "负面状态",
+    "file": "19_rushed_pulse.png",
+    "size": [
+      256,
+      256
+    ],
+    "status": "preview_pending_approval"
+  },
+  {
+    "id": "20_stardust_leak",
+    "label": "20 星屑漏损",
+    "category": "负面状态",
+    "file": "20_stardust_leak.png",
+    "size": [
+      256,
+      256
+    ],
+    "status": "preview_pending_approval"
+  },
+  {
+    "id": "21_freeze_dullness",
+    "label": "21 冻结迟钝",
+    "category": "负面状态",
+    "file": "21_freeze_dullness.png",
+    "size": [
+      256,
+      256
+    ],
+    "status": "preview_pending_approval"
+  },
+  {
+    "id": "22_rift_echo",
+    "label": "22 裂隙回声",
+    "category": "负面状态",
+    "file": "22_rift_echo.png",
+    "size": [
+      256,
+      256
+    ],
+    "status": "preview_pending_approval"
+  }
+]

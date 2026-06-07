@@ -85,6 +85,7 @@ var resume_protection := 0.0
 
 var title_font: Font
 var body_font: Font
+@onready var ui_root: GameUIRoot = $UIRoot
 
 
 func _ready() -> void:
@@ -93,7 +94,38 @@ func _ready() -> void:
 	body_font = ThemeDB.fallback_font
 	if not _load_data():
 		set_process(false)
+		return
+	ui_root.bind_game(self)
+	ui_root.start_requested.connect(_start_run)
+	ui_root.reward_selected.connect(_choose_reward)
+	ui_root.reroll_requested.connect(_reroll_rewards)
+	ui_root.correction_selected.connect(_choose_correction)
+	ui_root.tutorial_closed.connect(_close_tutorial)
+	ui_root.resume_requested.connect(_resume_from_pause)
+	ui_root.restart_requested.connect(_restart_run)
+	ui_root.menu_requested.connect(_return_to_menu)
+	ui_root.reduced_motion_changed.connect(_set_reduced_motion)
 	queue_redraw()
+
+
+func _close_tutorial() -> void:
+	tutorial_visible = false
+	tutorial_seen = true
+
+
+func _restart_run() -> void:
+	_start_run(risk_mode)
+
+
+func _return_to_menu() -> void:
+	paused = false
+	tutorial_visible = false
+	state = GameState.MENU
+
+
+func _set_reduced_motion(enabled: bool) -> void:
+	combat_feedback.set_reduced_motion(enabled)
+	_show_message("低动态反馈：开" if enabled else "低动态反馈：关", 1.2)
 
 
 func _load_data() -> bool:
@@ -1003,28 +1035,14 @@ func _draw() -> void:
 		draw_line(Vector2(0, y), Vector2(1280, y), Color("#182237"), 1.0)
 
 	if state == GameState.MENU:
-		_draw_menu()
 		return
 	draw_set_transform(combat_feedback.shake_offset())
 	_draw_world()
 	draw_set_transform(Vector2.ZERO)
-	_draw_hud()
 	if combat_feedback.screen_flash_remaining > 0.0:
 		var flash_color: Color = combat_feedback.screen_flash_color
 		flash_color.a = combat_feedback.screen_flash_alpha()
 		draw_rect(Rect2(Vector2.ZERO, VIEW_SIZE), flash_color)
-	if state == GameState.REWARD:
-		_draw_reward_overlay()
-	elif state == GameState.CORRECTION:
-		_draw_correction_overlay()
-	elif state == GameState.GAME_OVER:
-		_draw_end_overlay("挑战失败")
-	elif state == GameState.VICTORY:
-		_draw_end_overlay("垂直切片完成")
-	elif tutorial_visible:
-		_draw_tutorial_overlay()
-	elif paused:
-		_draw_pause_overlay()
 
 
 func _draw_world() -> void:
