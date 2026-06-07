@@ -9,10 +9,12 @@ signal reward_selected(index: int)
 signal reroll_requested
 signal correction_selected(index: int)
 signal tutorial_closed
+signal pause_requested
 signal resume_requested
 signal restart_requested
 signal menu_requested
 signal reduced_motion_changed(enabled: bool)
+signal setting_changed(key: StringName, value: Variant)
 
 var game: Node
 var device_manager: InputDeviceManager
@@ -36,7 +38,10 @@ var menu_screen: Control
 var reward_screen: Control
 var reward_cards: HBoxContainer
 var reroll_button: Button
+var reward_confirm_button: Button
+var selected_reward_index := 0
 var correction_screen: Control
+var correction_detail: Label
 var results_screen: Control
 var results_title: Label
 var results_summary: Label
@@ -51,6 +56,7 @@ var confirm_title: Label
 var confirm_body: Label
 var confirm_action: Callable
 var toast_label: Label
+var debug_label: Label
 var prompt_label: Label
 var reduced_motion := false
 var ui_scale := 1.0
@@ -61,6 +67,7 @@ var last_view := ""
 var last_weapons_signature := ""
 var last_debuff_signature := ""
 var scaled_icon_cache: Dictionary = {}
+var focus_return: Control
 
 
 func _ready() -> void:
@@ -80,6 +87,7 @@ func _ready() -> void:
 	_build_results()
 	_build_confirm()
 	_build_toast()
+	_build_debug()
 	_on_device_changed(device_manager.current_device)
 
 
@@ -113,6 +121,7 @@ func refresh() -> void:
 		last_view = current_view
 		_focus_current_screen()
 	_refresh_toast()
+	_refresh_debug()
 
 
 func _process(_delta: float) -> void:
@@ -127,21 +136,43 @@ func _input(event: InputEvent) -> void:
 			_close_settings()
 		elif confirm_screen.visible:
 			_close_confirm()
+		elif not manual_tutorial_context.is_empty():
+			_close_manual_tutorial()
 		elif bool(game.tutorial_visible):
 			menu_requested.emit()
 		elif bool(game.paused):
 			resume_requested.emit()
 		else:
-			game.paused = true
+			pause_requested.emit()
 		get_viewport().set_input_as_handled()
 	elif event.is_action_pressed("ui_cancel"):
 		if confirm_screen.visible:
 			_close_confirm()
 		elif settings_screen.visible:
 			_close_settings()
+		elif not manual_tutorial_context.is_empty():
+			_close_manual_tutorial()
+		elif bool(game.paused):
+			resume_requested.emit()
+		get_viewport().set_input_as_handled()
 	elif event.is_action_pressed("ui_reroll") and reward_screen.visible:
 		reroll_requested.emit()
 		get_viewport().set_input_as_handled()
+	elif event.is_action_pressed("ui_accept") and reward_screen.visible:
+		var owner := get_viewport().gui_get_focus_owner()
+		if owner is Button and owner.has_meta("reward_index"):
+			reward_selected.emit(int(owner.get_meta("reward_index")))
+			get_viewport().set_input_as_handled()
+	elif event is InputEventKey and event.pressed and not event.echo:
+		if int(game.state) == game.GameState.MENU and event.keycode in [KEY_1, KEY_2]:
+			start_requested.emit(event.keycode == KEY_2)
+			get_viewport().set_input_as_handled()
+		elif reward_screen.visible and event.keycode >= KEY_1 and event.keycode <= KEY_3:
+			reward_selected.emit(event.keycode - KEY_1)
+			get_viewport().set_input_as_handled()
+		elif correction_screen.visible and event.keycode >= KEY_1 and event.keycode <= KEY_3:
+			correction_selected.emit(event.keycode - KEY_1)
+			get_viewport().set_input_as_handled()
 
 
 func _ensure_input_actions() -> void:
@@ -281,6 +312,7 @@ func _build_reward() -> void:
 	footer.add_theme_constant_override("separation", 16)
 	box.add_child(footer)
 	reroll_button = _button(footer, "重抽", func(): reroll_requested.emit())
+	reward_confirm_button = _button(footer, "确认选择", _confirm_selected_reward, Tokens.SUCCESS)
 	_label(footer, "方向键选择 / 确认键选取", 15, Tokens.TEXT_MUTED)
 
 
@@ -290,6 +322,8 @@ func _build_correction() -> void:
 	var box := _panel_vbox(center, 14)
 	_label(box, "负面状态修正", 32, Tokens.TEXT, HORIZONTAL_ALIGNMENT_CENTER)
 	_label(box, "每 5 级可修正一次风险。默认焦点为安全选项。", 16, Tokens.TEXT_SECONDARY, HORIZONTAL_ALIGNMENT_CENTER)
+	correction_detail = _label(box, "", 16, Tokens.TEXT_SECONDARY)
+	correction_detail.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	var remove := _button(box, "移除最早获得的负面状态", func(): correction_selected.emit(0), Tokens.SUCCESS)
 	remove.name = "DefaultFocus"
 	_button(box, "保留风险，恢复 25 生命", func(): correction_selected.emit(1), Tokens.WARNING)
@@ -309,7 +343,13 @@ func _build_tutorial() -> void:
 	box.add_child(icon)
 	tutorial_body = _label(box, "", 20, Tokens.TEXT_SECONDARY, HORIZONTAL_ALIGNMENT_CENTER)
 	tutorial_body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	var tutorial_actions := HBoxContainer.new()
+	tutorial_actions.alignment = BoxContainer.ALIGNMENT_CENTER
+	tutorial_actions.add_theme_constant_override("separation", 16)
+	box.add_child(tutorial_actions)
+	_button(tutorial_actions, "跳过教学", _skip_tutorial)
 	tutorial_next = _button(box, "下一步", _advance_tutorial)
+	tutorial_next.reparent(tutorial_actions)
 	tutorial_next.name = "DefaultFocus"
 	_show_tutorial_step(0)
 
@@ -342,15 +382,33 @@ func _build_settings() -> void:
 	settings_screen = _modal_root(modal_layer)
 	settings_screen.visible = false
 	var center := _center_anchor(settings_screen, 220, 76, 840, 568)
-	var box := _panel_vbox(center, 14)
+	var scroll := ScrollContainer.new()
+	scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT, Control.PRESET_MODE_MINSIZE, 12)
+	center.add_child(scroll)
+	var box := VBoxContainer.new()
+	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	box.add_theme_constant_override("separation", 14)
+	scroll.add_child(box)
 	_label(box, "设置与可访问性", 32, Tokens.TEXT, HORIZONTAL_ALIGNMENT_CENTER)
 	_label(box, "显示", 20, Tokens.PRIMARY)
+	var fullscreen_button := _button(box, "显示模式：窗口", _toggle_fullscreen)
+	fullscreen_button.name = "FullscreenButton"
 	var scale_button := _button(box, "UI 缩放：100%", func(): _cycle_ui_scale())
 	scale_button.name = "UIScaleButton"
+	_label(box, "音频", 20, Tokens.PRIMARY)
+	var volume_button := _button(box, "总音量：100%", _cycle_master_volume)
+	volume_button.name = "VolumeButton"
+	_label(box, "操作", 20, Tokens.PRIMARY)
+	_label(box, "键盘：方向键 / Enter / Esc / R\n手柄：方向输入 / A / B / X / Start", 15, Tokens.TEXT_SECONDARY)
 	_label(box, "可访问性", 20, Tokens.PRIMARY)
 	var motion_button := _button(box, "低动态模式：关", func(): _toggle_reduced_motion())
 	motion_button.name = "MotionButton"
-	_label(box, "低动态模式会关闭屏幕震动与命中停顿，并降低闪屏强度。", 15, Tokens.TEXT_SECONDARY)
+	var shake_button := _button(box, "屏幕震动：开", _toggle_screen_shake)
+	shake_button.name = "ShakeButton"
+	var hit_stop_button := _button(box, "命中停顿：开", _toggle_hit_stop)
+	hit_stop_button.name = "HitStopButton"
+	var flash_button := _button(box, "闪屏强度：100%", _cycle_flash_intensity)
+	flash_button.name = "FlashButton"
 	var close := _button(box, "返回", _close_settings)
 	close.name = "DefaultFocus"
 
@@ -388,6 +446,12 @@ func _build_toast() -> void:
 	var anchor := _center_anchor(toast_layer, 440, 28, 400, 58)
 	toast_label = _label(anchor, "", 18, Tokens.SECONDARY, HORIZONTAL_ALIGNMENT_CENTER)
 	toast_label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+
+
+func _build_debug() -> void:
+	var anchor := _margin_anchor(debug_layer, -344, 24, 320, 156)
+	debug_label = _label(anchor, "", 14, Tokens.TEXT_SECONDARY)
+	debug_label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
 
 func _refresh_hud() -> void:
@@ -456,7 +520,7 @@ func _refresh_boss() -> void:
 	boss_panel.visible = not boss.is_empty()
 	if boss.is_empty():
 		return
-	var total_max := float(boss.max_hp) + maxf(0.0, float(boss.get("shield", 0.0)))
+	var total_max := float(boss.max_hp) + maxf(0.0, float(boss.get("shield_max", 0.0)))
 	var ratio := 100.0 * (float(boss.hp) + float(boss.shield)) / maxf(1.0, total_max)
 	boss_label.text = "星骸巨像  阶段 %d  |  %d%%" % [int(boss.boss_phase), int(ratio)]
 
@@ -467,6 +531,7 @@ func _refresh_rewards() -> void:
 		return
 	reward_cards.set_meta("signature", signature)
 	_clear_children(reward_cards)
+	selected_reward_index = clampi(selected_reward_index, 0, maxi(0, game.reward_choices.size() - 1))
 	for i in game.reward_choices.size():
 		var reward: Dictionary = game.reward_choices[i]
 		var card := Button.new()
@@ -476,18 +541,26 @@ func _refresh_rewards() -> void:
 		card.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		card.icon = _reward_icon(reward)
 		card.expand_icon = true
+		card.toggle_mode = true
+		card.button_pressed = i == selected_reward_index
+		card.set_meta("reward_index", i)
 		var risk_id := str(reward.get("debuff_id", ""))
 		var risk_text := ""
 		if not risk_id.is_empty():
-			risk_text = "\n\n风险代价\n" + str(game.debuffs_data[risk_id].description)
+			var severity := _severity_label(str(game.debuffs_data[risk_id].get("severity", "light")))
+			risk_text = "\n\n风险 %s / 可在修正窗口移除\n代价：%s\n构筑适配：需用对应反应抵消收益压力" % [
+				severity,
+				str(game.debuffs_data[risk_id].description),
+			]
 		card.text = "%s\n%s\n\n%s%s" % [
 			str(reward.name),
-			game._reward_type_label(str(reward.type)),
+			_reward_type_label(str(reward.type)),
 			str(reward.description),
 			risk_text,
 		]
 		card.tooltip_text = card.text
-		card.pressed.connect(func(index: int = i): reward_selected.emit(index))
+		card.focus_entered.connect(func(index: int = i): _select_reward(index))
+		card.gui_input.connect(func(event: InputEvent, index: int = i): _on_reward_card_gui_input(event, index))
 		reward_cards.add_child(card)
 	reroll_button.disabled = not bool(game._can_reroll_rewards())
 	reroll_button.text = "重抽（剩余 %d）" % int(game.rerolls_remaining)
@@ -495,22 +568,21 @@ func _refresh_rewards() -> void:
 
 
 func _refresh_correction() -> void:
-	var detail := correction_screen.find_child("CorrectionDetail", true, false) as Label
-	if detail == null:
-		var box := correction_screen.find_children("*", "VBoxContainer", true, false)[0] as VBoxContainer
-		detail = _label(box, "", 16, Tokens.TEXT_SECONDARY)
-		detail.name = "CorrectionDetail"
 	if game.active_debuffs.is_empty():
-		detail.text = "当前没有可修正的负面状态。"
+		correction_detail.text = "当前没有可修正的负面状态。"
 	else:
 		var id: String = str(game.active_debuffs[0])
-		detail.text = "将被移除：%s\n%s" % [str(game.debuffs_data[id].name), str(game.debuffs_data[id].description)]
+		correction_detail.text = "当前状态：%s  %s  可移除\n影响：%s\n来源：风险奖励" % [
+			str(game.debuffs_data[id].name),
+			_severity_label(str(game.debuffs_data[id].get("severity", "light"))),
+			str(game.debuffs_data[id].description),
+		]
 
 
 func _refresh_results() -> void:
 	results_title.text = "挑战胜利" if int(game.state) == game.GameState.VICTORY else "挑战失败"
 	var reactions: Dictionary = game.metrics.get("reactions", {})
-	results_summary.text = "%s  |  第 %d/%d 层  |  等级 %d\n\n击杀：%d\n造成伤害：%d\n受到伤害：%d\n\n雷链：%d    破碎：%d    热冲击：%d\n\n%s" % [
+	results_summary.text = "%s  |  第 %d/%d 层  |  等级 %d\n\n击杀：%d\n造成伤害：%d\n受到伤害：%d\n\n雷链：%d    破碎：%d    热冲击：%d" % [
 		"风险模式" if bool(game.risk_mode) else "标准模式",
 		int(game.layer),
 		int(game.run_config.get("layer_count", 6)),
@@ -521,13 +593,28 @@ func _refresh_results() -> void:
 		int(reactions.get("lightning_chain", 0)),
 		int(reactions.get("shatter", 0)),
 		int(reactions.get("thermal_shock", 0)),
-		"本局数据已保存。" if bool(game.metrics_saved) else "数据保存失败，请检查用户目录权限。",
 	]
 
 
 func _refresh_toast() -> void:
-	toast_label.visible = float(game.message_time) > 0.0
-	toast_label.text = str(game.message)
+	var save_failed := results_screen.visible and not bool(game.metrics_saved)
+	toast_label.visible = float(game.message_time) > 0.0 or save_failed
+	toast_label.text = "数据保存失败，请检查用户目录权限。" if save_failed else str(game.message)
+	toast_label.add_theme_color_override("font_color", Tokens.DANGER if save_failed else Tokens.SECONDARY)
+
+
+func _refresh_debug() -> void:
+	debug_layer.visible = OS.is_debug_build() and bool(game.debug_overlay_visible)
+	if not debug_layer.visible:
+		return
+	debug_label.text = "P4 Debug\nFPS: %d\nEnemies: %d / %d\nProjectiles: %d / %d\nMotion: %s" % [
+		Engine.get_frames_per_second(),
+		game.enemies.size(),
+		game.MAX_ENEMIES,
+		game.projectiles.size(),
+		game.MAX_PROJECTILES,
+		"LOW" if game.combat_feedback.reduced_motion else "FULL",
+	]
 
 
 func _build_summary() -> String:
@@ -578,7 +665,26 @@ func _advance_tutorial() -> void:
 		tutorial_closed.emit()
 
 
+func _skip_tutorial() -> void:
+	if manual_tutorial_context.is_empty():
+		tutorial_closed.emit()
+	else:
+		_close_manual_tutorial()
+
+
+func _close_manual_tutorial() -> void:
+	var context := manual_tutorial_context
+	manual_tutorial_context = ""
+	tutorial_screen.visible = false
+	if context == "menu":
+		menu_screen.visible = true
+	else:
+		pause_screen.visible = true
+	_restore_focus()
+
+
 func _open_tutorial_from_menu() -> void:
+	remember_focus()
 	manual_tutorial_context = "menu"
 	_show_tutorial_step(0)
 	tutorial_screen.visible = true
@@ -586,6 +692,7 @@ func _open_tutorial_from_menu() -> void:
 
 
 func _open_tutorial_from_pause() -> void:
+	remember_focus()
 	manual_tutorial_context = "pause"
 	_show_tutorial_step(0)
 	pause_screen.visible = false
@@ -594,6 +701,7 @@ func _open_tutorial_from_pause() -> void:
 
 
 func _open_settings() -> void:
+	remember_focus()
 	menu_screen.visible = false
 	pause_screen.visible = false
 	settings_screen.visible = true
@@ -606,7 +714,7 @@ func _close_settings() -> void:
 		menu_screen.visible = true
 	else:
 		pause_screen.visible = true
-	_focus_current_screen()
+	_restore_focus()
 
 
 func _cycle_ui_scale() -> void:
@@ -618,6 +726,54 @@ func _cycle_ui_scale() -> void:
 	button.text = "UI 缩放：%d%%" % int(ui_scale * 100.0)
 
 
+func _toggle_fullscreen() -> void:
+	var fullscreen := DisplayServer.window_get_mode() != DisplayServer.WINDOW_MODE_FULLSCREEN
+	setting_changed.emit(&"fullscreen", fullscreen)
+	var button := settings_screen.find_child("FullscreenButton", true, false) as Button
+	button.text = "显示模式：" + ("全屏" if fullscreen else "窗口")
+
+
+func _cycle_master_volume() -> void:
+	var button := settings_screen.find_child("VolumeButton", true, false) as Button
+	var current := int(button.get_meta("volume", 100))
+	var values := [100, 75, 50, 25, 0]
+	var index := values.find(current)
+	var next: int = values[(index + 1) % values.size()]
+	button.set_meta("volume", next)
+	button.text = "总音量：%d%%" % next
+	setting_changed.emit(&"master_volume", next)
+
+
+func _toggle_boolean_setting(key: StringName, button: Button) -> void:
+	var enabled := not bool(button.get_meta("enabled", true))
+	button.set_meta("enabled", enabled)
+	var labels := {
+		&"screen_shake": "屏幕震动",
+		&"hit_stop": "命中停顿",
+	}
+	button.text = "%s：%s" % [str(labels[key]), "开" if enabled else "关"]
+	setting_changed.emit(key, enabled)
+
+
+func _toggle_screen_shake() -> void:
+	_toggle_boolean_setting(&"screen_shake", settings_screen.find_child("ShakeButton", true, false) as Button)
+
+
+func _toggle_hit_stop() -> void:
+	_toggle_boolean_setting(&"hit_stop", settings_screen.find_child("HitStopButton", true, false) as Button)
+
+
+func _cycle_flash_intensity() -> void:
+	var button := settings_screen.find_child("FlashButton", true, false) as Button
+	var current := int(button.get_meta("intensity", 100))
+	var values := [100, 50, 25, 0]
+	var index := values.find(current)
+	var next: int = values[(index + 1) % values.size()]
+	button.set_meta("intensity", next)
+	button.text = "闪屏强度：%d%%" % next
+	setting_changed.emit(&"flash_intensity", float(next) / 100.0)
+
+
 func _toggle_reduced_motion() -> void:
 	reduced_motion = not reduced_motion
 	var button := settings_screen.find_child("MotionButton", true, false) as Button
@@ -626,6 +782,7 @@ func _toggle_reduced_motion() -> void:
 
 
 func _open_confirm(title: String, body: String, action: Callable) -> void:
+	remember_focus()
 	confirm_title.text = title
 	confirm_body.text = body
 	confirm_action = action
@@ -637,13 +794,58 @@ func _open_confirm(title: String, body: String, action: Callable) -> void:
 func _close_confirm() -> void:
 	confirm_screen.visible = false
 	pause_screen.visible = true
-	_focus_first(pause_screen)
+	_restore_focus()
 
 
 func _confirm_dangerous_action() -> void:
 	confirm_screen.visible = false
 	if confirm_action.is_valid():
 		confirm_action.call()
+
+
+func remember_focus() -> void:
+	focus_return = get_viewport().gui_get_focus_owner()
+
+
+func _restore_focus() -> void:
+	await get_tree().process_frame
+	if is_instance_valid(focus_return) and focus_return.visible and focus_return.focus_mode != Control.FOCUS_NONE:
+		focus_return.grab_focus()
+	else:
+		_focus_current_screen()
+
+
+func _select_reward(index: int) -> void:
+	selected_reward_index = clampi(index, 0, maxi(0, reward_cards.get_child_count() - 1))
+	for child in reward_cards.get_children():
+		var card := child as Button
+		card.button_pressed = int(card.get_meta("reward_index", -1)) == selected_reward_index
+
+
+func _on_reward_card_gui_input(event: InputEvent, index: int) -> void:
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+		_select_reward(index)
+		var card := reward_cards.get_child(index) as Button
+		card.grab_focus()
+		card.accept_event()
+
+
+func _confirm_selected_reward() -> void:
+	reward_selected.emit(selected_reward_index)
+
+
+func _reward_type_label(type_name: String) -> String:
+	var labels := {
+		"stat": "属性强化",
+		"heal": "生存恢复",
+		"weapon_unlock": "新武器",
+		"weapon_level": "武器升级",
+	}
+	return str(labels.get(type_name, type_name))
+
+
+func _severity_label(severity: String) -> String:
+	return {"light": "轻度", "medium": "中度", "heavy": "重度"}.get(severity, "未知")
 
 
 func _focus_current_screen() -> void:
@@ -721,8 +923,16 @@ func _color_rect(color: Color) -> ColorRect:
 
 func _margin_anchor(parent: Control, x: float, y: float, width: float, height: float) -> PanelContainer:
 	var result := PanelContainer.new()
-	result.position = Vector2(x if x >= 0 else 1280 + x, y if y >= 0 else 720 + y)
-	result.size = Vector2(width, height)
+	var left := x >= 0.0
+	var top := y >= 0.0
+	result.set_anchor(SIDE_LEFT, 0.0 if left else 1.0)
+	result.set_anchor(SIDE_RIGHT, 0.0 if left else 1.0)
+	result.set_anchor(SIDE_TOP, 0.0 if top else 1.0)
+	result.set_anchor(SIDE_BOTTOM, 0.0 if top else 1.0)
+	result.offset_left = x if left else x
+	result.offset_right = result.offset_left + width
+	result.offset_top = y if top else y
+	result.offset_bottom = result.offset_top + height
 	result.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	parent.add_child(result)
 	return result
@@ -730,8 +940,11 @@ func _margin_anchor(parent: Control, x: float, y: float, width: float, height: f
 
 func _center_anchor(parent: Control, x: float, y: float, width: float, height: float) -> PanelContainer:
 	var result := PanelContainer.new()
-	result.position = Vector2(x, y)
-	result.size = Vector2(width, height)
+	result.set_anchors_preset(Control.PRESET_CENTER)
+	result.offset_left = x - 640.0
+	result.offset_right = result.offset_left + width
+	result.offset_top = y - 360.0
+	result.offset_bottom = result.offset_top + height
 	result.mouse_filter = Control.MOUSE_FILTER_PASS
 	parent.add_child(result)
 	return result

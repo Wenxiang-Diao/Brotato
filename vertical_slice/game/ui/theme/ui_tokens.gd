@@ -18,6 +18,7 @@ const DANGER := Color("#ff6b5e")
 const CURSE := Color("#b57bff")
 const HEALTH := Color("#ff4d7a")
 const XP := Color("#66e3f0")
+const FONT_PATH := "res://assets/fonts/NotoSansSC-VF.ttf"
 
 const SPACE_1 := 4
 const SPACE_2 := 8
@@ -67,7 +68,7 @@ static func panel_style(color: Color = SURFACE, border_color: Color = BORDER, ra
 
 static func build_theme() -> Theme:
 	var result := Theme.new()
-	result.default_font = ThemeDB.fallback_font
+	result.default_font = load(FONT_PATH) as Font
 	result.default_font_size = 18
 	result.set_color("font_color", "Label", TEXT)
 	result.set_color("font_color", "Button", TEXT)

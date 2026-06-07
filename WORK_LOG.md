@@ -480,3 +480,15 @@ P1 试玩就绪范围已经完成：
 - 数据校验和跨文件引用校验通过；Python 单元测试 8 项通过。
 - 阶段完成报告记录于 `vertical_slice/design/21_p4_stage7_godot_ui_completion_report.md`。
 - 当前图标为用户批准的暂定资产；未来可保持文件名不变直接替换。
+
+### 49. P4 完整复核与逻辑修正
+
+- 状态：已完成。
+- 按 P4 视觉规范、页面线框和 Godot UI 契约复核阶段 1 至阶段 7 的全部新增内容。
+- 发现并修复暂停输入双重处理、奖励卡鼠标误领取、教程缺少跳过和焦点返回、设置项不足、Boss HUD 百分比分母错误、正式字体缺失、旧程序化 UI 函数残留等问题。
+- `UIRoot` 不再直接修改暂停状态，改由信号向 `Main` 发出意图；`Main._unhandled_input()` 只保留 F8/F9/F10 开发快捷键。
+- 奖励页改为卡片选中 + 确认按钮，避免鼠标单击直接领取风险奖励。
+- 设置页补充显示、音频、操作和可访问性分类；低动态、震动、命中停顿和闪屏强度均可单独控制。
+- 已导入并使用 `NotoSansSC-VF.ttf`，不再依赖 Godot fallback font。
+- 旧 `_draw_*()` UI 页面函数已删除，调试信息迁入 `DebugLayer`。
+- 完整复核报告记录于 `vertical_slice/design/22_p4_full_revalidation_report.md`。

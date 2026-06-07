@@ -12,6 +12,9 @@ var screen_flash_remaining := 0.0
 var screen_flash_color := Color.TRANSPARENT
 var elapsed := 0.0
 var reduced_motion := false
+var shake_enabled := true
+var hit_stop_enabled := true
+var flash_intensity := 1.0
 
 
 func reset() -> void:
@@ -70,7 +73,7 @@ func trigger_line(start: Vector2, end: Vector2, color: Color, width: float = 2.0
 
 
 func trigger_shake(strength: float, duration: float) -> void:
-	if reduced_motion:
+	if reduced_motion or not shake_enabled:
 		return
 	if strength >= shake_strength or shake_remaining <= 0.0:
 		shake_strength = strength
@@ -79,7 +82,7 @@ func trigger_shake(strength: float, duration: float) -> void:
 
 
 func trigger_hit_stop(duration: float) -> void:
-	if reduced_motion:
+	if reduced_motion or not hit_stop_enabled:
 		return
 	hit_stop_remaining = minf(0.05, maxf(hit_stop_remaining, duration))
 
@@ -113,7 +116,7 @@ func shake_offset() -> Vector2:
 func screen_flash_alpha() -> float:
 	if screen_flash_remaining <= 0.0:
 		return 0.0
-	var max_alpha: float = 0.14 if reduced_motion else 0.32
+	var max_alpha: float = (0.14 if reduced_motion else 0.32) * flash_intensity
 	return clampf(screen_flash_remaining / 0.18, 0.0, 1.0) * max_alpha
 
 

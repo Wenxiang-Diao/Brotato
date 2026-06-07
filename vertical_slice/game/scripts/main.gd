@@ -9,6 +9,7 @@ const ProgressionServiceScript := preload("res://game/scripts/core/progression_s
 const TargetingServiceScript := preload("res://game/scripts/core/targeting_service.gd")
 const CombatEventHubScript := preload("res://game/scripts/core/combat_event_hub.gd")
 const CombatFeedbackScript := preload("res://game/scripts/core/combat_feedback.gd")
+const UIFont := preload("res://assets/fonts/NotoSansSC-VF.ttf")
 const VIEW_SIZE := Vector2(1280.0, 720.0)
 const ARENA_MARGIN := 34.0
 const RUN_SEED := 20260606
@@ -90,8 +91,8 @@ var body_font: Font
 
 func _ready() -> void:
 	rng.seed = RUN_SEED
-	title_font = ThemeDB.fallback_font
-	body_font = ThemeDB.fallback_font
+	title_font = UIFont
+	body_font = UIFont
 	if not _load_data():
 		set_process(false)
 		return
@@ -101,16 +102,23 @@ func _ready() -> void:
 	ui_root.reroll_requested.connect(_reroll_rewards)
 	ui_root.correction_selected.connect(_choose_correction)
 	ui_root.tutorial_closed.connect(_close_tutorial)
+	ui_root.pause_requested.connect(_pause_run)
 	ui_root.resume_requested.connect(_resume_from_pause)
 	ui_root.restart_requested.connect(_restart_run)
 	ui_root.menu_requested.connect(_return_to_menu)
 	ui_root.reduced_motion_changed.connect(_set_reduced_motion)
+	ui_root.setting_changed.connect(_apply_ui_setting)
 	queue_redraw()
 
 
 func _close_tutorial() -> void:
 	tutorial_visible = false
 	tutorial_seen = true
+
+
+func _pause_run() -> void:
+	if state == GameState.PLAYING and not tutorial_visible:
+		paused = true
 
 
 func _restart_run() -> void:
@@ -126,6 +134,27 @@ func _return_to_menu() -> void:
 func _set_reduced_motion(enabled: bool) -> void:
 	combat_feedback.set_reduced_motion(enabled)
 	_show_message("低动态反馈：开" if enabled else "低动态反馈：关", 1.2)
+
+
+func _apply_ui_setting(key: StringName, value: Variant) -> void:
+	match key:
+		&"fullscreen":
+			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN if bool(value) else DisplayServer.WINDOW_MODE_WINDOWED)
+		&"master_volume":
+			var volume := int(value)
+			AudioServer.set_bus_mute(0, volume <= 0)
+			if volume > 0:
+				AudioServer.set_bus_volume_db(0, linear_to_db(float(volume) / 100.0))
+		&"screen_shake":
+			combat_feedback.shake_enabled = bool(value)
+			if not bool(value):
+				combat_feedback.shake_remaining = 0.0
+		&"hit_stop":
+			combat_feedback.hit_stop_enabled = bool(value)
+			if not bool(value):
+				combat_feedback.hit_stop_remaining = 0.0
+		&"flash_intensity":
+			combat_feedback.flash_intensity = clampf(float(value), 0.0, 1.0)
 
 
 func _load_data() -> bool:
@@ -146,59 +175,15 @@ func _load_data() -> bool:
 func _unhandled_input(event: InputEvent) -> void:
 	if not event is InputEventKey or not event.pressed or event.echo:
 		return
-	if state == GameState.PLAYING:
-		if tutorial_visible:
-			if event.keycode == KEY_ENTER:
-				tutorial_visible = false
-				tutorial_seen = true
-				queue_redraw()
-			elif event.keycode == KEY_ESCAPE:
-				state = GameState.MENU
-				tutorial_visible = false
-				queue_redraw()
-			return
-		if paused:
-			if event.keycode == KEY_ESCAPE or event.keycode == KEY_P:
-				_resume_from_pause()
-			elif event.keycode == KEY_M:
-				paused = false
-				state = GameState.MENU
-			queue_redraw()
-			return
-		if event.keycode == KEY_ESCAPE or event.keycode == KEY_P:
-			paused = true
-			queue_redraw()
-			return
-	match state:
-		GameState.MENU:
-			if event.keycode == KEY_1:
-				_start_run(false)
-			elif event.keycode == KEY_2:
-				_start_run(true)
-		GameState.REWARD:
-			if event.keycode == KEY_R:
-				_reroll_rewards()
-			elif event.keycode >= KEY_1 and event.keycode <= KEY_3:
-				_choose_reward(event.keycode - KEY_1)
-		GameState.CORRECTION:
-			if event.keycode >= KEY_1 and event.keycode <= KEY_3:
-				_choose_correction(event.keycode - KEY_1)
-		GameState.GAME_OVER, GameState.VICTORY:
-			if event.keycode == KEY_R:
-				_start_run(risk_mode)
-			elif event.keycode == KEY_M:
-				state = GameState.MENU
-				queue_redraw()
-		GameState.PLAYING:
-			if event.keycode == KEY_F8:
-				combat_feedback.set_reduced_motion(not combat_feedback.reduced_motion)
-				_show_message("低动态反馈：开" if combat_feedback.reduced_motion else "低动态反馈：关", 1.2)
-			elif event.keycode == KEY_F9:
-				debug_overlay_visible = not debug_overlay_visible
-				queue_redraw()
-			elif event.keycode == KEY_F10:
-				metrics.debug_used = true
-				_advance_layer()
+	if state != GameState.PLAYING or tutorial_visible or paused:
+		return
+	if event.keycode == KEY_F8:
+		_set_reduced_motion(not combat_feedback.reduced_motion)
+	elif event.keycode == KEY_F9:
+		debug_overlay_visible = not debug_overlay_visible
+	elif event.keycode == KEY_F10:
+		metrics.debug_used = true
+		_advance_layer()
 
 
 func _start_run(use_risk_mode: bool) -> void:
@@ -1119,137 +1104,3 @@ func _draw_combat_effects() -> void:
 				draw_arc(effect.position, ring_radius, 0.0, TAU, 40, color, 3.0)
 			"line":
 				draw_line(effect.start, effect.end, color, float(effect.width))
-
-
-func _draw_hud() -> void:
-	var hp_ratio: float = maxf(0.0, float(player.hp) / float(player.max_hp))
-	var xp_ratio: float = float(player.xp) / float(player.xp_next)
-	draw_rect(Rect2(24, 22, 300, 18), Color("#2d2633"))
-	draw_rect(Rect2(24, 22, 300 * hp_ratio, 18), Color("#ef476f"))
-	draw_string(body_font, Vector2(28, 37), "HP %d / %d" % [player.hp, player.max_hp], HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color.WHITE)
-	draw_rect(Rect2(24, 48, 300, 10), Color("#26333c"))
-	draw_rect(Rect2(24, 48, 300 * xp_ratio, 10), Color("#7cf6ff"))
-	draw_string(body_font, Vector2(24, 80), "等级 %d  |  第 %d/%d 层  |  %02d:%02d" % [player.level, layer, int(run_config.get("layer_count", 6)), int(total_time) / 60, int(total_time) % 60], HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color.WHITE)
-	draw_string(body_font, Vector2(24, 105), "主动技能 [Space] %.1fs" % player.skill_cooldown, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("#ffd166"))
-	var weapon_labels: Array[String] = []
-	for weapon_id in player.weapons.keys():
-		var weapon_data: Dictionary = _find_by_id(weapons, str(weapon_id))
-		var weapon_name: String = str(weapon_data.get("name", weapon_id))
-		weapon_labels.append("%s Lv.%d" % [weapon_name, int(player.weapons[weapon_id])])
-	draw_string(body_font, Vector2(24, 130), "武器：" + " / ".join(weapon_labels), HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#b8c5d6"))
-	var debuff_names: Array[String] = []
-	for id in active_debuffs:
-		debuff_names.append(str(debuffs_data[id].name))
-	draw_string(body_font, Vector2(24, 154), "Debuff：" + ("无" if debuff_names.is_empty() else " / ".join(debuff_names)), HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#ff9f7f"))
-	draw_string(body_font, Vector2(1060, 30), "F10 跳层（调试）", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#66758c"))
-	draw_string(body_font, Vector2(1060, 50), "F8 低动态反馈", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#66758c"))
-	draw_string(body_font, Vector2(930, 80), "状态", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color.WHITE)
-	draw_string(body_font, Vector2(930, 104), "标记  感电  冻结  灼烧", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#b8c5d6"))
-	draw_circle(Vector2(938, 121), 4.0, Color("#ffd166"))
-	draw_circle(Vector2(986, 121), 4.0, Color("#7aa2ff"))
-	draw_circle(Vector2(1034, 121), 4.0, Color("#8ad8ff"))
-	draw_circle(Vector2(1082, 121), 4.0, Color("#ff7043"))
-	draw_string(body_font, Vector2(930, 150), "雷链：标记+感电", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#ffe66d"))
-	draw_string(body_font, Vector2(930, 170), "破碎：冻结+重击", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#8ad8ff"))
-	draw_string(body_font, Vector2(930, 190), "热冲击：冻结+灼烧", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#ff8c42"))
-	if debug_overlay_visible:
-		draw_rect(Rect2(930, 225, 320, 135), Color("#080b12dd"))
-		draw_string(body_font, Vector2(945, 250), "P2 Debug", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("#7cf6ff"))
-		draw_string(body_font, Vector2(945, 275), "FPS: %d" % Engine.get_frames_per_second(), HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color.WHITE)
-		draw_string(body_font, Vector2(945, 298), "Enemies: %d / %d" % [enemies.size(), MAX_ENEMIES], HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color.WHITE)
-		draw_string(body_font, Vector2(945, 321), "Projectiles: %d / %d" % [projectiles.size(), MAX_PROJECTILES], HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color.WHITE)
-		draw_string(body_font, Vector2(945, 344), "Zones: %d  Pickups: %d" % [zones.size(), pickups.size()], HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color.WHITE)
-		draw_string(body_font, Vector2(1110, 250), "Motion: %s" % ("LOW" if combat_feedback.reduced_motion else "FULL"), HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#ffd166"))
-	if message_time > 0.0:
-		draw_string(title_font, Vector2(480, 82), message, HORIZONTAL_ALIGNMENT_CENTER, 320, 28, Color("#ffe66d"))
-
-
-func _draw_menu() -> void:
-	draw_string(title_font, Vector2(340, 190), "星链回响", HORIZONTAL_ALIGNMENT_CENTER, 600, 54, Color("#ffffff"))
-	draw_string(body_font, Vector2(390, 250), "P1 试玩就绪版", HORIZONTAL_ALIGNMENT_CENTER, 500, 24, Color("#7cf6ff"))
-	draw_string(body_font, Vector2(390, 335), "[1] 标准模式：仅验证战斗与状态反应", HORIZONTAL_ALIGNMENT_LEFT, -1, 22, Color("#ffffff"))
-	draw_string(body_font, Vector2(390, 385), "[2] 风险模式：加入风险奖励与 Debuff", HORIZONTAL_ALIGNMENT_LEFT, -1, 22, Color("#ffbf69"))
-	draw_string(body_font, Vector2(390, 470), "WASD / 方向键移动，Space 主动技能", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#b8c5d6"))
-	draw_string(body_font, Vector2(390, 505), "固定种子：%d" % RUN_SEED, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("#66758c"))
-
-
-func _draw_reward_overlay() -> void:
-	draw_rect(Rect2(Vector2.ZERO, VIEW_SIZE), Color("#080b12aa"))
-	draw_rect(Rect2(170, 130, 940, 470), Color("#0b0e18ee"))
-	draw_string(title_font, Vector2(390, 180), "升级：选择一项", HORIZONTAL_ALIGNMENT_CENTER, 500, 34, Color.WHITE)
-	var can_reroll: bool = _can_reroll_rewards()
-	var reroll_text: String = "[R] 重抽（剩余 %d）" % rerolls_remaining
-	if rerolls_remaining <= 0:
-		reroll_text = "重抽次数已用完"
-	elif not can_reroll:
-		reroll_text = "没有足够的全新候选可供重抽"
-	draw_string(body_font, Vector2(390, 210), reroll_text, HORIZONTAL_ALIGNMENT_CENTER, 500, 17, Color("#7cf6ff") if can_reroll else Color("#66758c"))
-	for i in reward_choices.size():
-		var reward: Dictionary = reward_choices[i]
-		var x: float = 215.0 + i * 300.0
-		var color: Color = Color("#263956") if str(reward.get("debuff_id", "")).is_empty() else Color("#5a3035")
-		draw_rect(Rect2(x, 225, 260, 285), color)
-		draw_string(title_font, Vector2(x + 18, 270), "[%d] %s" % [i + 1, reward.name], HORIZONTAL_ALIGNMENT_LEFT, 224, 22, Color.WHITE)
-		draw_string(body_font, Vector2(x + 18, 300), _reward_type_label(str(reward.type)), HORIZONTAL_ALIGNMENT_LEFT, 224, 14, Color("#7cf6ff"))
-		draw_multiline_string(body_font, Vector2(x + 18, 335), reward.description, HORIZONTAL_ALIGNMENT_LEFT, 224, 17, 24, Color("#dbe8f5"))
-		var debuff_id: String = str(reward.get("debuff_id", ""))
-		if not debuff_id.is_empty():
-			draw_multiline_string(body_font, Vector2(x + 18, 430), "代价：" + str(debuffs_data[debuff_id].description), HORIZONTAL_ALIGNMENT_LEFT, 224, 15, 20, Color("#ffb4a2"))
-
-
-func _reward_type_label(type_name: String) -> String:
-	var labels: Dictionary = {
-		"stat": "属性强化",
-		"heal": "生存恢复",
-		"weapon_unlock": "新武器",
-		"weapon_level": "武器升级",
-	}
-	return str(labels.get(type_name, type_name))
-
-
-func _draw_correction_overlay() -> void:
-	draw_rect(Rect2(Vector2.ZERO, VIEW_SIZE), Color("#080b12aa"))
-	draw_rect(Rect2(280, 165, 720, 390), Color("#0b0e18ee"))
-	draw_string(title_font, Vector2(390, 215), "5 级修正窗口", HORIZONTAL_ALIGNMENT_CENTER, 500, 32, Color.WHITE)
-	draw_string(body_font, Vector2(365, 290), "[1] 移除最早获得的 Debuff", HORIZONTAL_ALIGNMENT_LEFT, -1, 21, Color("#80ed99"))
-	draw_string(body_font, Vector2(365, 345), "[2] 保留风险，恢复 25 生命", HORIZONTAL_ALIGNMENT_LEFT, -1, 21, Color("#ffd166"))
-	draw_string(body_font, Vector2(365, 400), "[3] 保留风险，获得 8 经验", HORIZONTAL_ALIGNMENT_LEFT, -1, 21, Color("#ff9f7f"))
-
-
-func _draw_tutorial_overlay() -> void:
-	draw_rect(Rect2(Vector2.ZERO, VIEW_SIZE), Color("#080b12aa"))
-	draw_rect(Rect2(250, 145, 780, 430), Color("#0b0e18f2"))
-	draw_string(title_font, Vector2(340, 205), "战斗说明", HORIZONTAL_ALIGNMENT_CENTER, 600, 38, Color.WHITE)
-	draw_string(body_font, Vector2(330, 275), "WASD / 方向键：移动与走位", HORIZONTAL_ALIGNMENT_LEFT, -1, 21, Color("#dbe8f5"))
-	draw_string(body_font, Vector2(330, 320), "武器自动攻击；Space：释放星辉回路", HORIZONTAL_ALIGNMENT_LEFT, -1, 21, Color("#ffd166"))
-	draw_string(body_font, Vector2(330, 365), "组合武器状态，触发雷链、破碎和热冲击", HORIZONTAL_ALIGNMENT_LEFT, -1, 21, Color("#7cf6ff"))
-	draw_string(body_font, Vector2(330, 410), "击败敌人并完成 6 层，最终击败星骸巨像", HORIZONTAL_ALIGNMENT_LEFT, -1, 21, Color("#80ed99"))
-	draw_string(body_font, Vector2(330, 455), "Esc / P：暂停", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#b8c5d6"))
-	draw_string(title_font, Vector2(390, 525), "按 Enter 开始", HORIZONTAL_ALIGNMENT_CENTER, 500, 24, Color.WHITE)
-
-
-func _draw_pause_overlay() -> void:
-	draw_rect(Rect2(Vector2.ZERO, VIEW_SIZE), Color("#080b12aa"))
-	draw_rect(Rect2(330, 220, 620, 280), Color("#0b0e18f2"))
-	draw_string(title_font, Vector2(390, 285), "已暂停", HORIZONTAL_ALIGNMENT_CENTER, 500, 42, Color.WHITE)
-	draw_string(body_font, Vector2(390, 355), "Esc / P：继续", HORIZONTAL_ALIGNMENT_CENTER, 500, 22, Color("#80ed99"))
-	draw_string(body_font, Vector2(390, 405), "M：返回模式选择", HORIZONTAL_ALIGNMENT_CENTER, 500, 20, Color("#b8c5d6"))
-
-
-func _draw_end_overlay(heading: String) -> void:
-	draw_rect(Rect2(Vector2.ZERO, VIEW_SIZE), Color("#080b12aa"))
-	draw_rect(Rect2(250, 135, 780, 470), Color("#0b0e18f2"))
-	draw_string(title_font, Vector2(340, 205), heading, HORIZONTAL_ALIGNMENT_CENTER, 600, 42, Color.WHITE)
-	var mode_name: String = "风险模式" if risk_mode else "标准模式"
-	draw_string(body_font, Vector2(340, 250), "%s  |  第 %d/%d 层  |  等级 %d" % [mode_name, layer, int(run_config.get("layer_count", 6)), int(player.level)], HORIZONTAL_ALIGNMENT_CENTER, 600, 20, Color("#7cf6ff"))
-	draw_string(body_font, Vector2(360, 305), "击杀：%d" % int(metrics.get("kills", 0)), HORIZONTAL_ALIGNMENT_LEFT, -1, 19, Color("#dbe8f5"))
-	draw_string(body_font, Vector2(360, 340), "造成伤害：%d" % int(metrics.get("damage_dealt", 0.0)), HORIZONTAL_ALIGNMENT_LEFT, -1, 19, Color("#dbe8f5"))
-	draw_string(body_font, Vector2(360, 375), "受到伤害：%d" % int(metrics.get("damage_taken", 0.0)), HORIZONTAL_ALIGNMENT_LEFT, -1, 19, Color("#ff9f7f"))
-	var reaction_metrics: Dictionary = metrics.get("reactions", {})
-	draw_string(body_font, Vector2(650, 305), "雷链：%d" % int(reaction_metrics.get("lightning_chain", 0)), HORIZONTAL_ALIGNMENT_LEFT, -1, 19, Color("#ffe66d"))
-	draw_string(body_font, Vector2(650, 340), "破碎：%d" % int(reaction_metrics.get("shatter", 0)), HORIZONTAL_ALIGNMENT_LEFT, -1, 19, Color("#8ad8ff"))
-	draw_string(body_font, Vector2(650, 375), "热冲击：%d" % int(reaction_metrics.get("thermal_shock", 0)), HORIZONTAL_ALIGNMENT_LEFT, -1, 19, Color("#ff8c42"))
-	draw_string(body_font, Vector2(340, 450), "[R] 以相同模式重新开始", HORIZONTAL_ALIGNMENT_CENTER, 600, 22, Color("#80ed99"))
-	draw_string(body_font, Vector2(340, 495), "[M] 返回模式选择", HORIZONTAL_ALIGNMENT_CENTER, 600, 20, Color("#b8c5d6"))
-	var save_text: String = "本局数据已写入 vertical_slice_runs.jsonl" if metrics_saved else "本局数据写入失败，请检查用户目录权限"
-	draw_string(body_font, Vector2(340, 545), save_text, HORIZONTAL_ALIGNMENT_CENTER, 600, 15, Color("#66758c") if metrics_saved else Color("#ff9f7f"))

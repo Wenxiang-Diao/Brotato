@@ -22,6 +22,7 @@ func _run() -> void:
 	assert(ui.menu_screen.visible)
 	assert(not ui.hud.visible)
 	assert(_has_focused_button(ui.menu_screen))
+	assert(ui.hud.theme.default_font != ThemeDB.fallback_font)
 	ui._open_tutorial_from_menu()
 	ui.refresh()
 	assert(ui.tutorial_screen.visible)
@@ -47,8 +48,13 @@ func _run() -> void:
 	assert(ui.reward_screen.visible)
 	assert(ui.reward_cards.get_child_count() == 3)
 	assert(_has_focused_button(ui.reward_screen))
+	var mouse_click := InputEventMouseButton.new()
+	mouse_click.button_index = MOUSE_BUTTON_LEFT
+	mouse_click.pressed = true
+	ui._on_reward_card_gui_input(mouse_click, 0)
+	assert(game.state == game.GameState.REWARD)
+	ui._confirm_selected_reward()
 
-	game._choose_reward(0)
 	while game.state == game.GameState.REWARD:
 		game._choose_reward(0)
 	if game.state == game.GameState.CORRECTION:
@@ -68,7 +74,14 @@ func _run() -> void:
 	assert(is_equal_approx(ui.ui_scale, 1.1))
 	ui._toggle_reduced_motion()
 	assert(game.combat_feedback.reduced_motion)
+	ui._toggle_screen_shake()
+	assert(not game.combat_feedback.shake_enabled)
+	ui._toggle_hit_stop()
+	assert(not game.combat_feedback.hit_stop_enabled)
+	ui._cycle_flash_intensity()
+	assert(is_equal_approx(game.combat_feedback.flash_intensity, 0.5))
 	ui._close_settings()
+	assert(ui.pause_screen.visible)
 
 	for resolution in [Vector2i(1280, 720), Vector2i(1280, 800), Vector2i(1920, 1080)]:
 		root.size = resolution
@@ -81,6 +94,18 @@ func _run() -> void:
 	await process_frame
 	assert(ui.results_screen.visible)
 	assert(_has_focused_button(ui.results_screen))
+
+	game._start_run(false)
+	game.tutorial_visible = false
+	ui.refresh()
+	var pause_event := InputEventKey.new()
+	pause_event.physical_keycode = KEY_P
+	pause_event.keycode = KEY_P
+	pause_event.pressed = true
+	ui._input(pause_event)
+	assert(game.paused)
+	ui._input(pause_event)
+	assert(not game.paused)
 
 	game.queue_free()
 	await process_frame

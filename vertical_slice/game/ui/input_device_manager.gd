@@ -11,9 +11,13 @@ var current_device: StringName = KEYBOARD_MOUSE
 
 func _input(event: InputEvent) -> void:
 	var next_device := current_device
-	if event is InputEventJoypadButton or event is InputEventJoypadMotion:
+	if event is InputEventJoypadButton:
 		next_device = GAMEPAD
-	elif event is InputEventKey or event is InputEventMouse:
+	elif event is InputEventJoypadMotion and absf(event.axis_value) > 0.5:
+		next_device = GAMEPAD
+	elif event is InputEventKey or event is InputEventMouseButton:
+		next_device = KEYBOARD_MOUSE
+	elif event is InputEventMouseMotion and event.relative.length_squared() > 4.0:
 		next_device = KEYBOARD_MOUSE
 	if next_device != current_device:
 		current_device = next_device

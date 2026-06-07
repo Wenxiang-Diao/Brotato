@@ -18,11 +18,12 @@ class ProjectContractTest(unittest.TestCase):
     def test_two_validation_modes_and_metrics_exist(self):
         scripts = "\n".join(
             path.read_text(encoding="utf-8")
-            for path in (SLICE_ROOT / "game" / "scripts").rglob("*.gd")
+            for path in (SLICE_ROOT / "game").rglob("*.gd")
         )
         for token in (
-            "_start_run(false)",
-            "_start_run(true)",
+            "start_requested.connect(_start_run)",
+            "start_requested.emit(false)",
+            "start_requested.emit(true)",
             "vertical_slice_runs.jsonl",
             "lightning_chain",
             "shatter",
@@ -100,6 +101,7 @@ class ProjectContractTest(unittest.TestCase):
 
         icons = list((SLICE_ROOT / "assets" / "ui" / "icons").glob("*.png"))
         self.assertEqual(22, len(icons))
+        self.assertTrue((SLICE_ROOT / "assets" / "fonts" / "NotoSansSC-VF.ttf").exists())
 
         main_scene = (SLICE_ROOT / "game" / "main.tscn").read_text(encoding="utf-8")
         main_script = (SLICE_ROOT / "game" / "scripts" / "main.gd").read_text(
@@ -112,6 +114,10 @@ class ProjectContractTest(unittest.TestCase):
             self.assertIn(f'_full_control("{layer}")', ui_script)
         for action in ("ui_reroll", "ui_details", "ui_pause"):
             self.assertIn(action, ui_script)
+        self.assertIn("NotoSansSC-VF.ttf", ui_script + main_script)
+        self.assertIn("reward_confirm_button", ui_script)
+        self.assertIn("pause_requested", ui_script + main_script)
+        self.assertNotIn("P1 试玩就绪版", main_script)
 
 
 if __name__ == "__main__":
