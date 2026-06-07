@@ -122,10 +122,14 @@ func _pause_run() -> void:
 
 
 func _restart_run() -> void:
+	if _run_is_active():
+		_finish_run("restart", _current_exit_context())
 	_start_run(risk_mode)
 
 
 func _return_to_menu() -> void:
+	if _run_is_active():
+		_finish_run(_menu_exit_result(), _current_exit_context())
 	paused = false
 	tutorial_visible = false
 	state = GameState.MENU
@@ -973,12 +977,40 @@ func _impact_color(source: String) -> Color:
 		_: return Color.WHITE
 
 
-func _finish_run(result: String) -> void:
+func _run_is_active() -> bool:
+	return not run_logged and state in [GameState.PLAYING, GameState.REWARD, GameState.CORRECTION]
+
+
+func _menu_exit_result() -> String:
+	if tutorial_visible:
+		return "quit_during_tutorial"
+	if state == GameState.REWARD:
+		return "quit_during_reward"
+	if paused:
+		return "quit_during_pause"
+	return "abandoned_to_menu"
+
+
+func _current_exit_context() -> String:
+	if tutorial_visible:
+		return "tutorial"
+	if state == GameState.REWARD:
+		return "reward"
+	if state == GameState.CORRECTION:
+		return "correction"
+	if paused:
+		return "pause"
+	if state == GameState.PLAYING:
+		return "playing"
+	return "none"
+
+
+func _finish_run(result: String, exit_context := "") -> void:
 	if run_logged:
 		return
 	run_logged = true
 	metrics.feedback_mode = "reduced" if combat_feedback.reduced_motion else "full"
-	metrics_saved = metrics_recorder.finalize_and_save(metrics, result, total_time, layer, player, active_debuffs)
+	metrics_saved = metrics_recorder.finalize_and_save(metrics, result, total_time, layer, player, active_debuffs, exit_context)
 	state = GameState.VICTORY if result == "victory" else GameState.GAME_OVER
 
 

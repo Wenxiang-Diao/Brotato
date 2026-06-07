@@ -21,6 +21,7 @@ func create_run(seed: int, risk_mode: bool) -> Dictionary:
 		"risk_rewards_chosen": 0,
 		"rerolls_used": 0,
 		"debug_used": false,
+		"exit_context": "",
 	}
 
 
@@ -44,7 +45,8 @@ func finalize_and_save(
 	total_time: float,
 	layer: int,
 	player: Dictionary,
-	active_debuffs: Array[String]
+	active_debuffs: Array[String],
+	exit_context := ""
 ) -> bool:
 	metrics.result = result
 	metrics.duration_seconds = total_time
@@ -52,6 +54,9 @@ func finalize_and_save(
 	metrics.level_reached = int(player.get("level", 1))
 	metrics.active_debuffs = active_debuffs.duplicate()
 	metrics.weapons = Dictionary(player.get("weapons", {})).duplicate()
+	metrics.exit_context = exit_context
+	metrics.hp_at_end = float(player.get("hp", 0.0))
+	metrics.max_hp_at_end = float(player.get("max_hp", 0.0))
 
 	var mode: FileAccess.ModeFlags = FileAccess.READ_WRITE if FileAccess.file_exists(METRICS_PATH) else FileAccess.WRITE_READ
 	var file: FileAccess = FileAccess.open(METRICS_PATH, mode)

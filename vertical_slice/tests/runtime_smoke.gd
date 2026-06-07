@@ -82,6 +82,8 @@ func _test_mode(game: Node2D, risk_mode: bool) -> void:
 	assert(game.state == game.GameState.GAME_OVER)
 	assert(game.run_logged)
 	assert(game.metrics_saved)
+	assert(game.metrics.result == "game_over")
+	assert(game.metrics.has("hp_at_end"))
 
 
 func _test_entity_limits(game: Node2D) -> void:
@@ -114,6 +116,15 @@ func _test_entity_limits(game: Node2D) -> void:
 	var weapon: Dictionary = game._find_by_id(game.weapons, "shell_pistol")
 	assert(not game._fire_projectile(weapon, 1, "mark"))
 	assert(game.projectiles.size() == game.MAX_PROJECTILES)
+
+	game._start_run(false)
+	game.tutorial_visible = false
+	game.total_time = 12.0
+	game._return_to_menu()
+	assert(game.state == game.GameState.MENU)
+	assert(game.run_logged)
+	assert(game.metrics.result == "abandoned_to_menu")
+	assert(game.metrics.exit_context == "playing")
 
 
 func _test_late_game_reroll_guard(game: Node2D) -> void:

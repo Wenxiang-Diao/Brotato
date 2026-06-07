@@ -492,3 +492,15 @@ P1 试玩就绪范围已经完成：
 - 已导入并使用 `NotoSansSC-VF.ttf`，不再依赖 Godot fallback font。
 - 旧 `_draw_*()` UI 页面函数已删除，调试信息迁入 `DebugLayer`。
 - 完整复核报告记录于 `vertical_slice/design/22_p4_full_revalidation_report.md`。
+
+### 50. P1 真人验证前 P0 数据可信度修复
+
+- 状态：已完成。
+- 奖励页改为键盘、鼠标和手柄均只能先选中奖励卡；真正领取必须触发“确认选择”按钮。
+- 数字键在奖励页改为选择卡片，不再直接领取，避免风险奖励误选污染测试结果。
+- 教程中按 `Esc/P` 不再直接返回主菜单，而是关闭教学并开始当前局，避免误退出。
+- 中途返回主菜单、重开、奖励页退出、教程退出和暂停退出现在会写入 JSONL，结果类型包含 `abandoned_to_menu`、`restart`、`quit_during_tutorial`、`quit_during_reward` 和 `quit_during_pause`。
+- 指标新增 `exit_context`、`hp_at_end` 和 `max_hp_at_end`，方便分析玩家放弃时的真实处境。
+- `急促脉冲` Debuff 改为纯负面代价：主动技能冷却增加 15%，最大生命降低 10%。
+- `analyze_playtest.py` 已同步输出退出上下文和结束生命字段。
+- 回归验证：数据校验通过，Python 单元测试通过，Godot 核心模块、运行时和 UI 测试均以退出码 0 通过。

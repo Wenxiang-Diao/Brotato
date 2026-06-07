@@ -53,6 +53,13 @@ func _run() -> void:
 	mouse_click.pressed = true
 	ui._on_reward_card_gui_input(mouse_click, 0)
 	assert(game.state == game.GameState.REWARD)
+	var accept_event := InputEventKey.new()
+	accept_event.physical_keycode = KEY_ENTER
+	accept_event.keycode = KEY_ENTER
+	accept_event.pressed = true
+	InputMap.action_add_event("ui_accept", accept_event)
+	ui._input(accept_event)
+	assert(game.state == game.GameState.REWARD)
 	ui._confirm_selected_reward()
 
 	while game.state == game.GameState.REWARD:
@@ -106,6 +113,12 @@ func _run() -> void:
 	assert(game.paused)
 	ui._input(pause_event)
 	assert(not game.paused)
+
+	game._start_run(false)
+	assert(game.tutorial_visible)
+	ui._input(pause_event)
+	assert(not game.tutorial_visible)
+	assert(game.state == game.GameState.PLAYING)
 
 	game.queue_free()
 	await process_frame

@@ -17,8 +17,8 @@
     "id": "rushed_pulse",
     "name": "急促脉冲",
     "severity": "medium",
-    "description": "主动技能冷却 -15%，最大生命 -10%。",
-    "modifiers": {"skill_cooldown_max": 0.85, "max_hp": 0.90}
+    "description": "主动技能冷却 +15%，最大生命 -10%。",
+    "modifiers": {"skill_cooldown_max": 1.15, "max_hp": 0.90}
   },
   {
     "id": "experience_leak",

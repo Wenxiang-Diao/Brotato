@@ -26,6 +26,7 @@ func _run() -> void:
 	var metrics: Dictionary = recorder.create_run(42, true)
 	assert(int(metrics.schema_version) == 1)
 	assert(metrics.mode == "risk")
+	assert(metrics.exit_context == "")
 	recorder.record_reaction(metrics, "shatter")
 	assert(int(metrics.reactions.shatter) == 1)
 

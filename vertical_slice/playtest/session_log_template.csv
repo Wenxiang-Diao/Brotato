@@ -1,0 +1,4 @@
+session_id,tester_id,run_order,mode,planned_mode_order,input_device,result_observed,exit_or_death_reason,confusion_notes,misclick_or_misinput,fps_feel,visual_clarity_1_5,fun_1_5,wants_replay,host_notes,jsonl_line_hint
+S001,T01,1,standard,standard_then_risk,keyboard_mouse,,,,,good,3,3,,
+S002,T01,2,risk,standard_then_risk,keyboard_mouse,,,,,good,3,3,,
+

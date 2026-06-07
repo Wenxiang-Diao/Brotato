@@ -139,7 +139,7 @@ func _input(event: InputEvent) -> void:
 		elif not manual_tutorial_context.is_empty():
 			_close_manual_tutorial()
 		elif bool(game.tutorial_visible):
-			menu_requested.emit()
+			tutorial_closed.emit()
 		elif bool(game.paused):
 			resume_requested.emit()
 		else:
@@ -161,14 +161,14 @@ func _input(event: InputEvent) -> void:
 	elif event.is_action_pressed("ui_accept") and reward_screen.visible:
 		var owner := get_viewport().gui_get_focus_owner()
 		if owner is Button and owner.has_meta("reward_index"):
-			reward_selected.emit(int(owner.get_meta("reward_index")))
+			_select_reward(int(owner.get_meta("reward_index")))
 			get_viewport().set_input_as_handled()
 	elif event is InputEventKey and event.pressed and not event.echo:
 		if int(game.state) == game.GameState.MENU and event.keycode in [KEY_1, KEY_2]:
 			start_requested.emit(event.keycode == KEY_2)
 			get_viewport().set_input_as_handled()
 		elif reward_screen.visible and event.keycode >= KEY_1 and event.keycode <= KEY_3:
-			reward_selected.emit(event.keycode - KEY_1)
+			_select_reward(event.keycode - KEY_1)
 			get_viewport().set_input_as_handled()
 		elif correction_screen.visible and event.keycode >= KEY_1 and event.keycode <= KEY_3:
 			correction_selected.emit(event.keycode - KEY_1)
@@ -313,7 +313,7 @@ func _build_reward() -> void:
 	box.add_child(footer)
 	reroll_button = _button(footer, "重抽", func(): reroll_requested.emit())
 	reward_confirm_button = _button(footer, "确认选择", _confirm_selected_reward, Tokens.SUCCESS)
-	_label(footer, "方向键选择 / 确认键选取", 15, Tokens.TEXT_MUTED)
+	_label(footer, "方向键或数字键选择 / 移动到确认按钮后领取", 15, Tokens.TEXT_MUTED)
 
 
 func _build_correction() -> void:
